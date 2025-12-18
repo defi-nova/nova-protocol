@@ -21,3 +21,29 @@ Session.vim
 .nvim/
 .emacs/
 .helix/
+
+# TON specific
+*.tact
+*.abi.json
+*.pkg
+*.boc
+*.cell
+*.fif
+*.fc
+
+# Logs
+*.log
+logs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage/
+*.lcov
+
+# Lock files
+package-lock.json
+yarn.lock

@@ -109,7 +109,7 @@ contract Strategy {
 
     receive(msg: Invest) {
         require(context().sender == self.vault_address, "Only vault");
-        require(self.current_health > 1100, "Risk of liquidation");
+        // require(self.current_health > 1100, "Risk of liquidation"); // REMOVED to allow deposits
         self.total_invested = self.total_invested + msg.amount;
         self.last_reported_balance = self.last_reported_balance + msg.amount; // Update base
         

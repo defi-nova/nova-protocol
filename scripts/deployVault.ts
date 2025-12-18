@@ -4,14 +4,13 @@ import { Strategy } from '../build/Strategy/Strategy_Strategy';
 import { NetworkProvider } from '@ton/blueprint';
 
 export async function run(provider: NetworkProvider) {
-    const admin = provider.sender().address;
-    if (!admin) throw new Error("Sender address required");
+    const admin = Address.parse("0QAmLCXR3ikA0ohMg6R82E2NHESHtXjA299_HqIe_Wqr1aXi");
 
     // 1. Deploy Vault with dummy strategy
     // We use the admin address as dummy strategy initially
     const dummyStrategy = admin;
-    // Dummy content (TEP-64)
-    const content = beginCell().storeUint(0, 8).endCell(); 
+    // Dummy content (TEP-64) с уникальным nonce для новых адресов
+    const content = beginCell().storeUint(Math.floor(Math.random() * 1000000), 32).endCell(); 
     
     const vault = provider.open(await Vault.fromInit(admin, dummyStrategy, content));
 
@@ -28,13 +27,15 @@ export async function run(provider: NetworkProvider) {
     console.log('Vault deployed at:', vault.address);
 
     // 2. Deploy Strategy
-    const strategy = provider.open(await Strategy.fromInit(vault.address, admin));
+    // Используем admin адрес как временный EVAA master для тестов
+    const evaa_master = admin;
+    const strategy = provider.open(await Strategy.fromInit(vault.address, admin, evaa_master));
     
     console.log('Deploying Strategy...');
     await strategy.send(
         provider.sender(),
         {
-            value: toNano('0.1'),
+            value: toNano('0.5'),
         },
         null,
     );
