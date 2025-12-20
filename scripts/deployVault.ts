@@ -27,8 +27,9 @@ export async function run(provider: NetworkProvider) {
     console.log('Vault deployed at:', vault.address);
 
     // 2. Deploy Strategy
-    // Используем admin адрес как временный EVAA master для тестов
-    const evaa_master = admin;
+    // EVAA Master адрес для тестнета
+    const evaa_master_testnet = Address.parse("0QDA1z-2LrWhzOUbU3eSg3tLY1gJmvDYMfQbp8pvbAH3QpIB");
+    const evaa_master = evaa_master_testnet;
     const strategy = provider.open(await Strategy.fromInit(vault.address, admin, evaa_master));
     
     console.log('Deploying Strategy...');

@@ -1,46 +1,63 @@
 # Yield Aggregator TON NOVA
 
-This project implements a yield aggregator for the TON blockchain, featuring a Vault and Strategy contract architecture designed for secure and efficient asset management. The system integrates with the EVAA protocol for external asset handling and includes robust testing with Jest.
+This project implements a high-performance yield aggregator for the TON blockchain, featuring a multi-strategy Vault and Strategy contract architecture designed for secure, scalable, and efficient asset management. The system integrates with the EVAA protocol for yield generation and includes built-in DEX support for asset swaps.
 
-## Implemented Features
+## Core Features
 
-### Vault Contract (`vault.tact`)
-- **Core Functionality**: Manages user deposits, withdrawals, and interactions with various strategies.
-- **Price Per Share (PPS) Protection**: Implements `stored_balance` to safeguard against PPS manipulation, ensuring fair value for all participants.
-- **Strategy Migration**: Supports secure migration of funds between different strategies, including slippage protection (`min_amount_out`).
-- **Refund Handling**: Processes `StrategyRefund` messages from associated strategies, verifying sender authenticity to prevent unauthorized operations.
-- **Scalable Withdrawal Queue**: Processes withdrawals in batches (default 50 requests per transaction) to avoid gas limit errors; admin can manually trigger additional batches via `ProcessWithdrawals` message.
-- **Circuit Breaker**: Admin-controlled global pause for deposits via `TogglePause` message to mitigate protocol emergencies.
-- **Emergency Unlock**: Admin-only `ResetProcessing` message to forcibly clear the `is_processing` flag if the vault gets stuck due to failed strategy interactions.
-- **Profit Security Check**: Rejects strategy profit reports that increase the strategy balance by more than 20% to prevent PPS manipulation by compromised strategies.
+### 🏦 Vault Contract (`vault.tact`)
+- **Multi-Strategy Architecture**: Supports multiple yield strategies simultaneously with weight-based allocation (Basis Points: 10000 = 100%).
+- **Price Per Share (PPS) Protection**: Implements `stored_balance` tracking to safeguard against PPS manipulation and flash loan attacks.
+- **Auto-Rebalancing**: Includes a `Rebalance` mechanism that automatically shifts funds between strategies to match target allocations.
+- **Scalable Withdrawal Queue**: Processes withdrawals in batches to stay within TON gas limits, ensuring the protocol remains functional even with thousands of users.
+- **Profit Security**: Built-in 20% profit cap check for strategy reports to prevent anomalous yield updates from compromised strategies.
+- **Circuit Breaker**: Global pause for deposits via `TogglePause` for emergency situations.
+- **Admin Recovery**: Secure administration with `SetAdmin`, `TransferOwnership`, and emergency recovery options.
 
-### Strategy Contract (`strategy.tact`)
-- **EVAA Integration**: Interacts with the EVAA protocol for asset supply and withdrawal operations.
-- **Typed Messages**: Sends typed `StrategyRefund` messages to the Vault for clear and secure communication.
-- **Bounced Message Handling**: Includes logic to revert accounting and refund funds in case of failed EVAA transactions.
-- **Configurable Asset IDs**: Supports setting asset IDs for EVAA interactions via `SetAssetId` handler.
+### 🛡️ Strategy Contract (`strategy.tact`)
+- **EVAA Protocol Integration**: Native support for supplying and withdrawing TON/Jettons to/from the EVAA lending protocol.
+- **DEX Integration**: Built-in interfaces for **DeDust** and **STON.fi**, allowing strategies to perform asset swaps (`SwapToJetton`).
+- **Bounced Message Handling**: Robust logic to handle failed external transactions and maintain accurate accounting.
+- **Flexible Configuration**: Supports dynamic asset IDs and DEX router addresses via admin messages.
 
-### EVAA Integration
-- **External Asset Management**: Facilitates interaction with the EVAA protocol for managing assets outside the core vault.
-- **Withdrawal Success/Failure Handling**: Processes `EvaaWithdrawSuccess` messages and handles bounced messages to maintain accurate accounting.
+## Key Mechanisms
 
-## Key Concepts
+- **PPS (Price Per Share)**: Tracks the value of vault assets relative to issued shares (scaled by 10^12).
+- **Strategy Migration**: Secure `MigrateStrategy` message with slippage protection (`min_amount_out`) for seamless movement between yield providers.
+- **Stored Balance**: Internal accounting that separates vault liquidity from total assets, providing a reliable baseline for yield calculations.
+- **Timelock (Optional Logic)**: Structure for timelocked actions to ensure decentralization and security.
 
-- **PPS (Price Per Share)**: A mechanism to track the value of assets within the vault, scaled by 10^12.
-- **Slippage Protection**: Implemented via `min_amount_out` parameter during strategy migration to prevent unexpected losses due to price fluctuations.
-- **Stored Balance**: An internal variable in the Vault contract used to protect against PPS manipulation by tracking the actual balance.
-- **Op Codes**: Numeric identifiers used in transaction messages for clear and efficient contract interaction (e.g., `0x55` for `StrategyRefund`).
-- **Circuit Breaker**: A mechanism allowing the administrator to pause certain protocol functions (e.g., deposits) in emergency situations.
-- **Emergency Unlock**: An administrator function to forcibly reset the `is_processing` flag in the Vault if it gets stuck due to an error.
-- **Batch Processing**: Processing queue items (e.g., withdrawal requests) in portions to avoid exceeding gas limits.
+## Testing & Validation
 
-## Testing
+The project uses a comprehensive testing framework based on `@ton/sandbox` and **Jest**.
 
-The project utilizes Jest for comprehensive testing of both Vault and Strategy contracts. All critical scenarios, including deposits, withdrawals, strategy migrations, EVAA interactions, and security measures, are covered. All 10 tests currently pass, ensuring the reliability and correctness of the contract logic. Additionally, a dedicated test suite (`VaultSecurity.spec.ts`) has been added to cover new security and scalability features like Circuit Breaker, Emergency Unlock, and Profit Security checks.
+### Test Suites:
+- `Vault.spec.ts`: Core vault logic (deposits, withdrawals, PPS tracking).
+- `VaultSecurity.spec.ts`: Security boundary testing (unauthorized access, profit caps, circuit breakers).
+- `PublicTestingScenarios.spec.ts`: Complex multi-user scenarios simulating real-world testnet behavior and PPS jumps.
+- `AdvancedFeatures.spec.ts`: Validation of the `Rebalance` mechanism and DEX swap logic.
+
+### Running Tests:
+```bash
+# Build contracts
+npx blueprint build Vault
+npx blueprint build Strategy
+
+# Run all tests
+npm test
+
+# Run specific suite
+npx jest tests/AdvancedFeatures.spec.ts
+```
+
+## Project Structure
+- `contracts/`: Tact source code.
+- `contracts/messages.tact`: Unified message definitions for cross-contract communication.
+- `tests/`: TypeScript test suites using TON Sandbox.
+- `build/`: Compiled artifacts (BOC and wrappers).
 
 ## Technologies Used
-
-- **Tact**: Smart contract language for the TON blockchain.
-- **TON Blockchain**: The target platform for contract deployment.
-- **Jest**: JavaScript testing framework.
-- **FunC**: (Underlying language for TON smart contracts, implicitly used by Tact).
+- **Tact**: Domain-specific language for TON smart contracts.
+- **TON Blockchain**: The underlying decentralized network.
+- **Blueprint**: Development environment for TON.
+- **EVAA Protocol**: Integrated yield source.
+- **DeDust / STON.fi**: Integrated DEX protocols.

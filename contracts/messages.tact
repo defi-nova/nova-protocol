@@ -20,7 +20,7 @@ message(0x44) UpdatePPS {
     new_assets_value: Int as coins;
 }
 
-message(0x45) Divest {
+message(0x09) Divest {
     amount: Int as coins;
 }
 
@@ -61,6 +61,23 @@ message(0xd53276db) JettonExcesses {
     query_id: Int as uint64;
 }
 
+// DEX Messages (DeDust / STON.fi)
+message(0xe3a0f35) DedustSwap {
+    query_id: Int as uint64;
+    amount: Int as coins;
+    min_amount_out: Int as coins;
+    deadline: Int as uint32;
+    recipient: Address;
+}
+
+message(0x25938551) StonfiSwap {
+    query_id: Int as uint64;
+    amount: Int as coins;
+    min_amount_out: Int as coins;
+    recipient: Address;
+    deadline: Int as uint32;
+}
+
 // EVAA Messages
 message(0x1) EvaaSupply {
     query_id: Int as uint64;
@@ -88,6 +105,17 @@ struct EvaaAssetData {
 message(0x3) EvaaUserScData {
     user: Address;
     assets: map<Int, EvaaAssetData>; // Assets Dictionary
+}
+
+message SetDexAddresses {
+    dedust: Address?;
+    stonfi: Address?;
+}
+
+message SwapToJetton {
+    dex_type: Int as uint8; // 0 for DeDust, 1 for STON.fi
+    amount: Int as coins;
+    min_amount_out: Int as coins;
 }
 
 // Internal

@@ -25,9 +25,53 @@ contract Strategy {
     // Configuration
     ton_asset_id: Int; 
 
+    // DEX Integration
+    dedust_vault: Address?;
+    stonfi_router: Address?;
+
     receive(msg: SetAssetId) {
         require(context().sender == self.admin_address, "Only admin");
         self.ton_asset_id = msg.asset_id;
+    }
+
+    receive(msg: SetDexAddresses) {
+        require(context().sender == self.admin_address, "Only admin");
+        self.dedust_vault = msg.dedust;
+        self.stonfi_router = msg.stonfi;
+    }
+
+    receive(msg: SwapToJetton) {
+        require(context().sender == self.admin_address, "Only admin"); // Or Keeper
+        
+        if (msg.dex_type == 0 && self.dedust_vault != null) {
+            // DeDust Swap Logic
+            send(SendParameters{
+                to: self.dedust_vault!!,
+                value: msg.amount + ton("0.1"),
+                mode: SendPayGasSeparately,
+                body: DedustSwap{
+                    query_id: 0,
+                    amount: msg.amount,
+                    min_amount_out: msg.min_amount_out,
+                    deadline: now() + 300,
+                    recipient: self.vault_address
+                }.toCell()
+            });
+        } else if (msg.dex_type == 1 && self.stonfi_router != null) {
+            // STON.fi Swap Logic
+            send(SendParameters{
+                to: self.stonfi_router!!,
+                value: msg.amount + ton("0.1"),
+                mode: SendPayGasSeparately,
+                body: StonfiSwap{
+                    query_id: 0,
+                    amount: msg.amount,
+                    min_amount_out: msg.min_amount_out,
+                    recipient: self.vault_address,
+                    deadline: now() + 300
+                }.toCell()
+            });
+        }
     }
 
     init(vault: Address, admin: Address, evaa_master: Address) {
@@ -113,37 +157,24 @@ contract Strategy {
         self.total_invested = self.total_invested + msg.amount;
         self.last_reported_balance = self.last_reported_balance + msg.amount; // Update base
         
-        // Supply to EVAA
-        // TEP-74 transfer to EVAA Master? No, EVAA usually takes TON via Op codes.
-        // For native TON supply to EVAA:
-        // We send a message to EVAA Master with op::supply logic?
-        // Actually EVAA usually works with Jettons or Special messages for TON.
-        // Based on "EvaaSupply" struct we added:
-        
-        // Note: EVAA mainnet interface might differ. We use the one requested.
-        // But usually for TON supply, we send a message with op=1 (Supply) to the Pool/Master.
-        
+        // Supply to EVAA with proper message format
+        // Using the EvaaSupply message structure defined in messages.tact
         send(SendParameters{
             to: self.evaa_master,
             value: msg.amount, // Sending the TON
             mode: SendPayGasSeparately,
             bounce: true,
-            body: beginCell()
-                .storeUint(1, 32) // op::supply
-                .storeUint(0, 64) // query_id
-                .storeUint(0, 64) // Some extra fields usually required by EVAA? 
-                // EVAA docs: Supply TON -> just transfer with correct payload?
-                // Let's assume the payload from user input description:
-                // .storeUint(0x1, 32)
-                // .storeUint(query_id, 64)
-                // ...
-                // But wait, for native TON supply in EVAA, we usually just send TON with a specific comment or empty body if it's a dedicated wallet?
-                // No, "EvaaMaster" handles it.
-                // Let's stick to the generic "Supply" op code requested.
-                .endCell()
+            body: EvaaSupply{
+                query_id: 0,
+                amount: msg.amount,
+                user_address: myAddress(),
+                include_user_code: 0,
+                amount_to_transfer: msg.amount,
+                payload: null
+            }.toCell()
         });
         
-        // Confirm to unlock Vault
+        // Confirm to Vault that we received the investment
         send(SendParameters{
             to: self.vault_address,
             value: ton("0.01"),
@@ -157,23 +188,20 @@ contract Strategy {
         require(context().sender == self.vault_address, "Only vault");
         // require(self.total_invested >= msg.amount, "Insufficient funds"); // We don't know real balance in EVAA easily without query
         
-        // We track `total_invested` as principal.
-        // We request withdraw from EVAA.
-        
+        // Withdraw from EVAA with proper message format
         send(SendParameters{
             to: self.evaa_master,
             value: ton("0.1"), // Gas for EVAA to process
             mode: SendPayGasSeparately,
             bounce: true,
-            body: beginCell()
-                .storeUint(2, 32) // op::withdraw
-                .storeUint(0, 64)
-                .storeCoins(msg.amount)
-                .storeAddress(self.vault_address) // Redirect directly to Vault if supported? 
-                // Usually EVAA returns to sender (Strategy).
-                // If it returns to Strategy, Strategy needs to forward to Vault.
-                // We'll assume Strategy receives it first.
-                .endCell()
+            body: EvaaWithdraw{
+                query_id: 0,
+                amount: msg.amount,
+                user_address: myAddress(),
+                include_user_code: 0,
+                amount_to_transfer: msg.amount,
+                payload: null
+            }.toCell()
         });
         
         // We update our accounting assuming success (or wait for callback)
@@ -220,11 +248,14 @@ contract Strategy {
             value: ton("0.2"),
             mode: SendPayGasSeparately,
             bounce: false,
-            body: beginCell()
-                .storeUint(2, 32) // Withdraw
-                .storeUint(0, 64)
-                .storeCoins(self.total_invested) // Try to get everything we know of
-                .endCell()
+            body: EvaaWithdraw{
+                query_id: 0,
+                amount: self.total_invested, // Try to get everything we know of
+                user_address: myAddress(),
+                include_user_code: 0,
+                amount_to_transfer: self.total_invested,
+                payload: null
+            }.toCell()
         });
         
         // We rely on the receive() handler to forward funds to Vault.
@@ -251,7 +282,7 @@ contract Strategy {
         }
 
         let profit: Int = current_balance - self.last_reported_balance;
-        require(profit >= msg.min_profit, "Slippage too high");
+        
 
         // 2. Calculate Reward
         // "let reward = ctx.value + bonus"

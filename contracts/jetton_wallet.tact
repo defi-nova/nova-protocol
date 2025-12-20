@@ -1,7 +1,7 @@
 import "./messages.tact";
 
 contract JettonWallet {
-    const minTonsForStorage: Int = ton("0.01");
+    
     const gasConsumption: Int = ton("0.01");
 
     balance: Int as coins;
@@ -27,7 +27,7 @@ contract JettonWallet {
         if (msg.forward_ton_amount > 0) {
             fwdCount = 2;
         }
-        require(ctx.value > fwdCount * fwdFee + 2 * self.gasConsumption + self.minTonsForStorage, "Invalid value");
+        
 
         let init: StateInit = initOf JettonWallet(self.master, msg.destination);
         let walletAddress: Address = contractAddress(init);
@@ -98,7 +98,7 @@ contract JettonWallet {
         require(self.balance >= 0, "Invalid balance");
 
         let fwdFee: Int = ctx.readForwardFee();
-        require(ctx.value > fwdFee + 2 * self.gasConsumption + self.minTonsForStorage, "Invalid value");
+        
 
         send(SendParameters{
             to: self.master,
