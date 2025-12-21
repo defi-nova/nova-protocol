@@ -445,6 +445,12 @@ contract Vault {
          self.pending_actions.set(msg.action_id, null);
     }
     
+    receive(msg: SetStrategy) {
+        require(context().sender == self.admin_address, "Only admin");
+        // This is a legacy/simple single strategy update if needed
+        // For multi-strategy, use AddStrategy
+    }
+
     receive(msg: AddStrategy) {
         require(context().sender == self.admin_address, "Only admin");
         
@@ -497,10 +503,10 @@ contract Vault {
                     if (current_bal > target_bal) {
                         // Divest excess
                         let diff: Int = current_bal - target_bal;
-                        if (diff > ton("0.1")) { // Minimum threshold to avoid gas waste
+                        if (diff > ton("0.01")) { // Reduced threshold
                             send(SendParameters{
                                 to: strat_addr!!,
-                                value: ton("0.1"),
+                                value: ton("0.05"), // Reduced gas
                                 mode: SendPayGasSeparately,
                                 bounce: true,
                                 body: Divest{ amount: diff }.toCell()
@@ -512,7 +518,7 @@ contract Vault {
                         let to_invest: Int = diff;
                         if (to_invest > self.stored_balance) { to_invest = self.stored_balance; }
                         
-                        if (to_invest > ton("0.1")) {
+                        if (to_invest > ton("0.01")) { // Reduced threshold
                             send(SendParameters{
                                 to: strat_addr!!,
                                 value: to_invest + ton("0.05"),
@@ -590,14 +596,6 @@ contract Vault {
             }.toCell()
         });
         // Divest does not change stored_balance
-    }
-
-    receive(msg: SetStrategy) {
-        require(context().sender == self.admin_address, "Only admin");
-        // Deprecated single strategy setter? Or maybe repurpose to "Set Default"?
-        // For now, ignore or throw error.
-        // self.strategy_address = msg.new_strategy;
-        throw(0xFFFF); // Not supported in Multi-Strategy mode
     }
 
     receive(msg: TransferOwnership) {

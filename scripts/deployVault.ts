@@ -27,9 +27,8 @@ export async function run(provider: NetworkProvider) {
     console.log('Vault deployed at:', vault.address);
 
     // 2. Deploy Strategy
-    // EVAA Master адрес для тестнета
-    const evaa_master_testnet = Address.parse("0QDA1z-2LrWhzOUbU3eSg3tLY1gJmvDYMfQbp8pvbAH3QpIB");
-    const evaa_master = evaa_master_testnet;
+    // Используем адрес админа как заглушку для EVAA Master (для тестнета/мейнета заменим на реальный)
+    const evaa_master = admin;
     const strategy = provider.open(await Strategy.fromInit(vault.address, admin, evaa_master));
     
     console.log('Deploying Strategy...');
@@ -45,17 +44,18 @@ export async function run(provider: NetworkProvider) {
     console.log('Strategy deployed at:', strategy.address);
 
     // 3. Update Vault with real Strategy
-    console.log('Updating Vault strategy address...');
+    console.log('Adding Strategy to Vault...');
     await vault.send(
         provider.sender(),
         {
-            value: toNano('0.05'),
+            value: toNano('0.1'),
         },
         {
-            $$type: 'SetStrategy',
-            new_strategy: strategy.address
+            $$type: 'AddStrategy',
+            strategy: strategy.address,
+            weight: 10000n // 100%
         }
     );
-    
+
     console.log('Done!');
 }

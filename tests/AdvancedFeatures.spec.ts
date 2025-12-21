@@ -59,10 +59,10 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
             min_shares: 0n
         });
 
-        // Add 20 TON to stored_balance for rebalancing investment
+        // Add 30 TON to stored_balance for rebalancing investment (more than needed for safety)
         await admin.send({
             to: vault.address,
-            value: toNano('20')
+            value: toNano('30')
         });
 
         // Initial weights are 70/30
