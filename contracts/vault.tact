@@ -17,9 +17,156 @@ contract Vault {
     strategies: map<Int, Address>; // ID -> Address
     strategy_info: map<Address, StrategyParams>; // Address -> Info
     strategies_count: Int;
+
+    struct StrategyParams {
+        weight: Int as uint16; // Basis points (10000 = 100%)
+        balance: Int as coins;
+        active: Bool;
+        current_apy: Int as uint16; // В базисных пунктах (например, 1500 = 15%)
+    }
+
+    // Message from users (Run Node in Mini App)
+    receive(msg: RunNode) {
+        // Any user can click "Run Node" to trigger rebalancing
+        // This is safe because it uses APY data previously set by the Admin
+        self.optimize_and_rebalance();
+        
+        // Return remaining gas to the user
+        self.reply("Node execution successful".asComment());
+    }
+
+    // Admin message to update APY data for multiple strategies at once
+    receive(msg: BatchUpdateApy) {
+        require(sender() == self.admin_address, "Only admin can update APY data");
+        
+        let i: Int = 0;
+        while (i < self.strategies_count) {
+            let entry: StrategyApy? = msg.apys.get(i);
+            if (entry != null) {
+                let info: StrategyParams? = self.strategy_info.get(entry!!.address);
+                if (info != null) {
+                    let updated: StrategyParams = info!!;
+                    updated.current_apy = entry!!.apy;
+                    self.strategy_info.set(entry!!.address, updated);
+                }
+            }
+            i += 1;
+        }
+        
+        // Automatically optimize weights after admin updates data
+        self.optimize_and_rebalance();
+    }
+
+    fun optimize_and_rebalance() {
+        let total_apy: Int = 0;
+        let active_strategies: Int = 0;
+        
+        // 1. Calculate total APY
+        let i: Int = 0;
+        while (i < self.strategies_count) {
+            let addr: Address? = self.strategies.get(i);
+            if (addr != null) {
+                let info: StrategyParams? = self.strategy_info.get(addr!!);
+                if (info != null && info!!.active) {
+                    total_apy += info!!.current_apy;
+                    active_strategies += 1;
+                }
+            }
+            i += 1;
+        }
+
+        // 2. Distribute weights proportional to APY
+        if (total_apy > 0) {
+            i = 0;
+            while (i < self.strategies_count) {
+                let addr: Address? = self.strategies.get(i);
+                if (addr != null) {
+                    let info: StrategyParams? = self.strategy_info.get(addr!!);
+                    if (info != null && info!!.active) {
+                        let new_weight: Int = (info!!.current_apy * 10000) / total_apy;
+                        
+                        // Safety: max 60% in one protocol
+                        if (new_weight > 6000) { new_weight = 6000; }
+                        
+                        let updated: StrategyParams = info!!;
+                        updated.weight = new_weight;
+                        self.strategy_info.set(addr!!, updated);
+                    }
+                }
+                i += 1;
+            }
+        }
+        
+        // 3. Trigger rebalancing
+        self.rebalance();
+    }
+
+    fun rebalance() {
+        let i: Int = 0;
+        let gas_for_msg: Int = ton("0.35"); // Increased for DEX swaps and complex logic
+        
+        while (i < self.strategies_count) {
+            let addr: Address? = self.strategies.get(i);
+            if (addr != null) {
+                let info: StrategyParams? = self.strategy_info.get(addr!!);
+                if (info != null && info!!.active) {
+                    let target_balance: Int = (self.total_assets * info!!.weight) / 10000;
+                    let current_balance: Int = info!!.balance;
+                    
+                    if (current_balance > target_balance + ton("0.1")) {
+                        // Excess - withdraw from strategy
+                        let to_withdraw: Int = current_balance - target_balance;
+                        send(SendParameters{
+                            to: addr!!,
+                            value: gas_for_msg,
+                            mode: SendPayGasSeparately,
+                            body: Divest{ amount: to_withdraw }.toCell()
+                        });
+                    } else if (current_balance < target_balance - ton("0.1") && self.stored_balance > ton("0.1")) {
+                        // Deficit - invest idle funds
+                        let to_invest: Int = target_balance - current_balance;
+                        if (to_invest > self.stored_balance) { to_invest = self.stored_balance; }
+                        
+                        if (to_invest > 0) {
+                            send(SendParameters{
+                                to: addr!!,
+                                value: to_invest + gas_for_msg,
+                                mode: SendPayGasSeparately,
+                                body: Invest{ amount: to_invest }.toCell()
+                            });
+                            self.stored_balance -= to_invest;
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+    }
+
+    // Admin message to update APY data manually
+    receive(msg: UpdateProtocolApy) {
+        require(sender() == self.admin_address, "Only admin");
+        
+        let info: StrategyParams? = self.strategy_info.get(msg.strategy);
+        if (info != null) {
+            let updated: StrategyParams = info!!;
+            updated.current_apy = msg.apy;
+            self.strategy_info.set(msg.strategy, updated);
+            self.optimize_and_rebalance();
+        }
+    }
+
+    receive("OptimizeWeights") {
+        require(sender() == self.admin_address, "Only admin");
+        self.optimize_and_rebalance();
+    }
+
     total_strategy_balance: Int as coins; // Aggregated balance
     stored_balance: Int as coins; // Internal balance tracking for PPS security
     total_assets: Int as coins; // Total assets for accurate PPS calculation
+
+    timelock_delay: Int;
+    last_action_id: Int;
 
     // Withdrawal Queue
     // We use a mapping with integer keys to simulate a queue
@@ -596,6 +743,31 @@ contract Vault {
             }.toCell()
         });
         // Divest does not change stored_balance
+    }
+
+    receive(msg: WithdrawEmergency) {
+        require(context().sender == self.admin_address, "Only admin");
+        
+        let amount: Int = msg.amount;
+        if (amount > myBalance() - ton("0.1")) {
+            amount = myBalance() - ton("0.1");
+        }
+        
+        send(SendParameters{
+            to: self.admin_address,
+            value: amount,
+            mode: SendIgnoreErrors,
+            body: "Emergency Withdrawal".asComment()
+        });
+        
+        // Update accounting if it was part of stored_balance
+        if (amount > self.stored_balance) {
+            self.total_assets -= self.stored_balance;
+            self.stored_balance = 0;
+        } else {
+            self.stored_balance -= amount;
+            self.total_assets -= amount;
+        }
     }
 
     receive(msg: TransferOwnership) {

@@ -3,7 +3,15 @@ message(0x75) Deposit {
     min_shares: Int as coins;
 }
 
-message(0x08) Invest {
+struct StrategyReport {
+    total_invested: Int as coins;
+    current_balance: Int as coins;
+    evaa_balance: Int as coins;
+    lp_balance: Int as coins;
+    mode: Int as uint8;
+}
+
+message(0x88) Invest {
     amount: Int as coins;
 }
 
@@ -50,6 +58,24 @@ message(0x595f07bc) JettonBurn {
     custom_payload: Cell?;
 }
 
+message UpdateProtocolApy {
+    strategy: Address;
+    apy: Int as uint16;
+}
+
+struct StrategyApy {
+    address: Address;
+    apy: Int as uint16;
+}
+
+message RunNode {
+    // No parameters, users only trigger rebalancing based on admin-set APY
+}
+
+message BatchUpdateApy {
+    apys: map<Int, StrategyApy>;
+}
+
 message(0x7bdd97de) JettonBurnNotification {
     query_id: Int as uint64;
     amount: Int as coins;
@@ -62,6 +88,35 @@ message(0xd53276db) JettonExcesses {
 }
 
 // DEX Messages (DeDust / STON.fi)
+struct SwapAdditionalData {
+    minOut: Int as coins;
+    receiverAddress: Address;
+    fwdGas: Int as coins;
+    customPayload: Cell?;
+    refundFwdGas: Int as coins;
+    refundPayload: Cell?;
+    refFee: Int as uint16;
+    referralAddress: Address?;
+}
+
+message(0x6664de2a) StonfiSwap {
+    otherTokenWallet: Address;
+    refundAddress: Address;
+    excessesAddress: Address;
+    deadline: Int as uint64;
+    additionalData: SwapAdditionalData;
+}
+
+// STON.fi v2 LP Messages
+message(0x37c0514a) StonfiProvideLiquidity {
+    otherTokenWallet: Address;
+    minLpOut: Int as coins;
+    refundAddress: Address;
+    excessesAddress: Address;
+    deadline: Int as uint64;
+}
+
+// DeDust Messages
 message(0xe3a0f35) DedustSwap {
     query_id: Int as uint64;
     amount: Int as coins;
@@ -70,11 +125,9 @@ message(0xe3a0f35) DedustSwap {
     recipient: Address;
 }
 
-message(0x25938551) StonfiSwap {
+message(0x40e10f03) DedustLiquidityDeposit {
     query_id: Int as uint64;
-    amount: Int as coins;
-    min_amount_out: Int as coins;
-    recipient: Address;
+    min_lp_out: Int as coins;
     deadline: Int as uint32;
 }
 
@@ -107,9 +160,22 @@ message(0x3) EvaaUserScData {
     assets: map<Int, EvaaAssetData>; // Assets Dictionary
 }
 
+message(0x68) WithdrawEmergency {
+    amount: Int as coins;
+}
+
+message(0x67) SetEvaaMaster {
+    evaa_master: Address;
+}
+
 message SetDexAddresses {
     dedust: Address?;
     stonfi: Address?;
+}
+
+message SetJettonWallets {
+    usdt: Address?;
+    lp_token: Address?;
 }
 
 message SwapToJetton {
@@ -163,6 +229,10 @@ message(0x55) StrategyRefund {
 
 message(0x66) SetAssetId {
     asset_id: Int;
+}
+
+message SetStrategyMode {
+    mode: Int as uint8;
 }
 
 message(0x888) MigrateStrategy {

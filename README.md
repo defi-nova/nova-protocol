@@ -1,23 +1,30 @@
 # Yield Aggregator TON NOVA
 
-This project implements a high-performance yield aggregator for the TON blockchain, featuring a multi-strategy Vault and Strategy contract architecture designed for secure, scalable, and efficient asset management. The system integrates with the EVAA protocol for yield generation and includes built-in DEX support for asset swaps.
+Nova is a high-performance, multi-strategy yield aggregator for the TON blockchain. It optimizes returns by dynamically shifting capital between Lending protocols and Liquidity Pools (LP).
+
+## 🚀 Global Updates (Latest)
+
+- **STON.fi v2 Migration**: Fully migrated to STON.fi v2 protocol, implementing advanced swap logic and LP provision using the latest `0x6664de2a` opcode and `SwapAdditionalData` structures.
+- **LP Automation (Swap + Provide)**: Implemented "One-Click" LP provision. The strategy automatically splits TON, swaps 50% to USDT, and provides liquidity to the pool in a single rebalancing flow.
+- **TON-Native Architecture**: Optimized for the TON ecosystem. TON is now the sole primary asset for entry, eliminating the need for users to hold USDT to start earning.
+- **Dynamic Slippage & MEV Protection**: Integrated API-driven `min_amount_out` calculation for DEX operations to protect user funds from slippage and front-running.
+- **DeDust.io Integration**: Added support for DeDust.io LP strategies, providing diversification and access to multiple liquidity sources.
+- **Gas-Optimized Rebalancing**: Refined gas limits (0.35 TON) to support complex multi-step DeFi operations (Swap + LP) in a single transaction.
 
 ## Core Features
 
 ### 🏦 Vault Contract (`vault.tact`)
 - **Multi-Strategy Architecture**: Supports multiple yield strategies simultaneously with weight-based allocation (Basis Points: 10000 = 100%).
 - **Price Per Share (PPS) Protection**: Implements `stored_balance` tracking to safeguard against PPS manipulation and flash loan attacks.
-- **Auto-Rebalancing**: Includes a `Rebalance` mechanism that automatically shifts funds between strategies to match target allocations.
+- **Auto-Rebalancing**: Includes a `Rebalance` mechanism that automatically shifts funds between strategies to match target allocations based on real-time APY.
 - **Scalable Withdrawal Queue**: Processes withdrawals in batches to stay within TON gas limits, ensuring the protocol remains functional even with thousands of users.
-- **Profit Security**: Built-in 20% profit cap check for strategy reports to prevent anomalous yield updates from compromised strategies.
 - **Circuit Breaker**: Global pause for deposits via `TogglePause` for emergency situations.
-- **Admin Recovery**: Secure administration with `SetAdmin`, `TransferOwnership`, and emergency recovery options.
 
 ### 🛡️ Strategy Contract (`strategy.tact`)
-- **EVAA Protocol Integration**: Native support for supplying and withdrawing TON/Jettons to/from the EVAA lending protocol.
-- **DEX Integration**: Built-in interfaces for **DeDust** and **STON.fi**, allowing strategies to perform asset swaps (`SwapToJetton`).
+- **EVAA Protocol Integration**: Native support for supply/borrow yield generation on EVAA Main Pool (TON Asset ID: 0).
+- **DEX LP Strategies**: Automated entry and exit for TON/USDT pairs on **STON.fi v2** and **DeDust.io**.
+- **Unified DEX Interface**: Support for `StonfiSwap`, `StonfiProvideLiquidity`, and `DedustSwap` messages.
 - **Bounced Message Handling**: Robust logic to handle failed external transactions and maintain accurate accounting.
-- **Flexible Configuration**: Supports dynamic asset IDs and DEX router addresses via admin messages.
 
 ## Key Mechanisms
 
