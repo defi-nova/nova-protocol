@@ -20,7 +20,7 @@ message(0x15) Harvest {
     min_profit: Int as coins;
 }
 
-message(0x88) ClaimReward {
+message(0x89) ClaimReward {
     // No params needed, just triggers claim
 }
 
@@ -41,14 +41,14 @@ message(0xf8a7ea5) JettonTransfer {
     response_destination: Address;
     custom_payload: Cell?;
     forward_ton_amount: Int as coins;
-    forward_payload: Slice as remaining;
+    forward_payload: Cell?; 
 }
 
 message(0x7362d09c) JettonTransferNotification {
     query_id: Int as uint64;
     amount: Int as coins;
     sender: Address;
-    forward_payload: Slice as remaining;
+    forward_payload: Cell?;
 }
 
 message(0x595f07bc) JettonBurn {
@@ -104,7 +104,7 @@ message(0x6664de2a) StonfiSwap {
     refundAddress: Address;
     excessesAddress: Address;
     deadline: Int as uint64;
-    additionalData: SwapAdditionalData;
+    additionalData: Cell; // Should be SwapAdditionalData
 }
 
 // STON.fi v2 LP Messages
@@ -169,8 +169,11 @@ message(0x67) SetEvaaMaster {
 }
 
 message SetDexAddresses {
-    dedust: Address?;
-    stonfi: Address?;
+    dedust_factory: Address;
+    dedust_vault: Address;
+    stonfi_router: Address;
+    stonfi_pton: Address;
+    usdt_master: Address;
 }
 
 message SetJettonWallets {
@@ -268,5 +271,5 @@ message(0x178d4519) JettonInternalTransfer {
     from: Address;
     response_destination: Address;
     forward_ton_amount: Int as coins;
-    forward_payload: Slice as remaining;
+    forward_payload: Cell?;
 }

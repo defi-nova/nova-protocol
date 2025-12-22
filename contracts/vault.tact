@@ -1,29 +1,27 @@
 import "./messages.tact";
 import "./jetton_wallet.tact";
 
+struct StrategyParams {
+    weight: Int as uint16; // Basis points (10000 = 100%)
+    balance: Int as coins;
+    active: Bool;
+    current_apy: Int as uint16; // В базисных пунктах (например, 1500 = 15%)
+}
+
 contract Vault {
     
     const gasConsumption: Int = ton("0.02"); // Reduced for tests
     const PPS_PRECISION: Int = 1000000000000; // 10^12
 
     total_shares: Int as coins;
-    // strategy_address: Address; // Replaced by strategies map
     admin_address: Address;
     recovery_address: Address; // Admin Recovery
     locked_assets: Int as coins; // Assets currently being moved/locked
-    // strategy_balance: Int as coins; // Replaced by aggregation
     
     // Multi-Strategy Storage
     strategies: map<Int, Address>; // ID -> Address
     strategy_info: map<Address, StrategyParams>; // Address -> Info
     strategies_count: Int;
-
-    struct StrategyParams {
-        weight: Int as uint16; // Basis points (10000 = 100%)
-        balance: Int as coins;
-        active: Bool;
-        current_apy: Int as uint16; // В базисных пунктах (например, 1500 = 15%)
-    }
 
     // Message from users (Run Node in Mini App)
     receive(msg: RunNode) {
@@ -165,9 +163,6 @@ contract Vault {
     stored_balance: Int as coins; // Internal balance tracking for PPS security
     total_assets: Int as coins; // Total assets for accurate PPS calculation
 
-    timelock_delay: Int;
-    last_action_id: Int;
-
     // Withdrawal Queue
     // We use a mapping with integer keys to simulate a queue
     // key: index, value: PendingWithdrawal
@@ -184,10 +179,14 @@ contract Vault {
     
     is_paused: Bool;
 
+    // TIMELOCK LOGIC
+    timelock_delay: Int; // Seconds
+    pending_actions: map<Int, TimelockAction>;
+    last_action_id: Int;
+
     // Migration State
     migration_target: Address?;
     migration_amount: Int?;
-    
 
     init(admin: Address, recovery: Address, content: Cell) {
         self.total_shares = 0;
@@ -316,7 +315,8 @@ contract Vault {
                           self.strategy_info.set(strat_addr!!, StrategyParams{
                               active: info!!.active,
                               weight: info!!.weight,
-                              balance: info!!.balance + invest_amount
+                              balance: info!!.balance + invest_amount,
+                              current_apy: info!!.current_apy
                           });
                           self.total_strategy_balance += invest_amount;
                       }
@@ -423,7 +423,8 @@ contract Vault {
         self.strategy_info.set(sender, StrategyParams{
             active: true,
             weight: info!!.weight,
-            balance: new_bal
+            balance: new_bal,
+            current_apy: info!!.current_apy
         });
         
         // Update Total
@@ -462,7 +463,8 @@ contract Vault {
         self.strategy_info.set(context().sender, StrategyParams{
             active: info!!.active,
             weight: info!!.weight,
-            balance: new_bal
+            balance: new_bal,
+            current_apy: info!!.current_apy
         });
         
         // Update total_strategy_balance
@@ -483,7 +485,8 @@ contract Vault {
                      self.strategy_info.set(target!!, StrategyParams{
                           active: targetInfo!!.active,
                           weight: targetInfo!!.weight,
-                          balance: targetInfo!!.balance + msg.amount
+                          balance: targetInfo!!.balance + msg.amount,
+                          current_apy: targetInfo!!.current_apy
                      });
                      self.total_strategy_balance = self.total_strategy_balance + msg.amount;
                      
@@ -563,11 +566,6 @@ contract Vault {
         self.processWithdrawals(msg.limit);
     }
 
-    // TIMELOCK LOGIC
-    timelock_delay: Int; // Seconds
-    pending_actions: map<Int, TimelockAction>;
-    last_action_id: Int;
-
     receive(msg: TimelockAction) {
         require(context().sender == self.admin_address, "Only admin");
         require(msg.execution_time >= now() + self.timelock_delay, "Delay too short");
@@ -610,7 +608,8 @@ contract Vault {
         self.strategy_info.set(msg.strategy, StrategyParams{
             active: true,
             weight: msg.weight,
-            balance: 0
+            balance: 0,
+            current_apy: 0
         });
         self.strategies_count = self.strategies_count + 1;
     }
@@ -623,7 +622,8 @@ contract Vault {
         self.strategy_info.set(msg.strategy, StrategyParams{
             active: info!!.active,
             weight: msg.weight,
-            balance: info!!.balance
+            balance: info!!.balance,
+            current_apy: info!!.current_apy
         });
     }
 
@@ -678,7 +678,8 @@ contract Vault {
                             self.strategy_info.set(strat_addr!!, StrategyParams{
                                 active: info!!.active,
                                 weight: info!!.weight,
-                                balance: info!!.balance + to_invest
+                                balance: info!!.balance + to_invest,
+                                current_apy: info!!.current_apy
                             });
                             self.total_strategy_balance += to_invest;
                         }
@@ -803,7 +804,7 @@ contract Vault {
                 from: myAddress(),
                 response_destination: to,
                 forward_ton_amount: 0,
-                forward_payload: emptySlice()
+                forward_payload: null
             }.toCell(),
             code: init.code,
             data: init.data
@@ -835,20 +836,14 @@ contract Vault {
     
     get fun get_pps(): Int {
          // Use total_assets for accurate PPS calculation (excludes gas reserves)
-         let gas_reserve: Int = ton("0.1"); // Reserve for gas fees
-         let effective_assets: Int = self.total_assets - gas_reserve;
-         if (effective_assets < 0) { effective_assets = 0; }
+         let effective_assets: Int = self.total_assets;
          
          if (self.total_shares == 0) { return self.PPS_PRECISION; }
          return (effective_assets * self.PPS_PRECISION) / self.total_shares; // Scaled by 10^12
     }
 }
 
-struct StrategyParams {
-    active: Bool;
-    weight: Int as uint16; // Basis points (10000 = 100%)
-    balance: Int as coins;
-}
+
 
 struct JettonData {
     total_supply: Int;

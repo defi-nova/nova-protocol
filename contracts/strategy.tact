@@ -6,17 +6,16 @@ message(0x999) MaintainHealth {
 }
 
 contract Strategy {
-    // Real Mainnet Addresses
-    const STONFI_ROUTER: Address = address("EQB3n9NWuHqhRM9PaPISTPoo6Y6Br8_s7U_s9s1s9s1s9s1s");
-    const STONFI_PTON: Address = address("EQCM3B12QK1_uBh98vX-uC4_n8h4vK-o8h4vK-o8h4vK-o8");
-    const DEDUST_FACTORY: Address = address("EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67");
-    const USDT_MASTER: Address = address("EQCxE6mUtH096_S5i05EOn76vK0uK_Y16kK-n9S5Y-S5Y-S5");
-    const EVAA_MASTER_MAINNET: Address = address("EQAY68YicCHp-tB3A87f_hWJ3Y05qA76Y3W5S5Y3W5S5Y3W5");
-
     vault_address: Address;
     total_invested: Int as coins; // This tracks our "principal" sent to EVAA
     admin_address: Address;
     evaa_master: Address;
+
+    // DEX & Protocol Addresses (Passed during init)
+    stonfi_router: Address;
+    stonfi_pton: Address;
+    dedust_factory: Address;
+    usdt_master: Address;
     
     // Health Factor Mock
     current_health: Int;
@@ -33,96 +32,6 @@ contract Strategy {
     ton_asset_id: Int; 
     strategy_mode: Int as uint8; // 0: EVAA Lending, 1: STON.fi LP, 2: DeDust LP
 
-    // DEX Integration
-    dedust_vault: Address?;
-    stonfi_router: Address?;
-    
-    // DEX LP Logic
-    // We need to store where we are currently invested (LP vs Lending)
-    // For now, let's assume we can split funds or switch modes.
-    // To keep it simple for this MVP: 
-    // - EVAA is default for lending.
-    // - If we want to LP, we use specific messages.
-    // But the Strategy contract needs to hold LP tokens.
-
-    receive(msg: SetStrategyMode) {
-        require(context().sender == self.admin_address, "Only admin");
-        self.strategy_mode = msg.mode;
-    }
-
-    receive(msg: SetJettonWallets) {
-        require(context().sender == self.admin_address, "Only admin");
-        self.usdt_wallet = msg.usdt;
-        self.lp_token_wallet = msg.lp_token;
-    }
-
-    receive(msg: SetAssetId) {
-        require(context().sender == self.admin_address, "Only admin");
-        self.ton_asset_id = msg.asset_id;
-    }
-
-    receive(msg: SetDexAddresses) {
-        require(context().sender == self.admin_address, "Only admin");
-        self.dedust_vault = msg.dedust;
-        self.stonfi_router = msg.stonfi;
-    }
-
-    receive(msg: SetEvaaMaster) {
-        require(context().sender == self.admin_address, "Only admin");
-        self.evaa_master = msg.evaa_master;
-    }
-
-    receive(msg: SwapToJetton) {
-        require(context().sender == self.admin_address, "Only admin"); 
-        
-        if (msg.dex_type == 0 && self.dedust_vault != null) {
-            // DeDust Swap Logic
-            send(SendParameters{
-                to: self.dedust_vault!!,
-                value: msg.amount + ton("0.15"),
-                mode: SendPayGasSeparately,
-                body: DedustSwap{
-                    query_id: 0,
-                    amount: msg.amount,
-                    min_amount_out: msg.min_amount_out,
-                    deadline: now().toUint32() + 300,
-                    recipient: myAddress()
-                }.toCell()
-            });
-        } else if (msg.dex_type == 1) {
-            // STON.fi v2 Swap Logic (pTON -> USDT)
-            send(SendParameters{
-                to: self.STONFI_PTON,
-                value: msg.amount + ton("0.3"),
-                mode: SendPayGasSeparately,
-                body: JettonTransfer{
-                    query_id: 0,
-                    amount: msg.amount,
-                    destination: self.STONFI_ROUTER,
-                    response_destination: myAddress(),
-                    custom_payload: null,
-                    forward_ton_amount: ton("0.24"),
-                    forward_payload: StonfiSwap{
-                        otherTokenWallet: self.usdt_wallet!!, // USDT Jetton Wallet of Strategy
-                        refundAddress: myAddress(),
-                        excessesAddress: myAddress(),
-                        deadline: (now() + 300).toUint64(),
-                        additionalData: SwapAdditionalData{
-                            minOut: msg.min_amount_out,
-                            receiverAddress: myAddress(),
-                            fwdGas: ton("0.15"),
-                            customPayload: null,
-                            refundFwdGas: 0,
-                            refundPayload: null,
-                            refFee: 10, // 0.1%
-                            referralAddress: self.admin_address
-                        }
-                    }.toCell().asSlice()
-                }.toCell()
-            });
-        }
-    }
-
     // State for DEX LP
     is_lp_active: Bool;
     pending_ton_for_lp: Int as coins;
@@ -132,30 +41,88 @@ contract Strategy {
     lp_token_wallet: Address?;
     usdt_wallet: Address?;
 
-    get fun get_strategy_data(): StrategyReport {
-        return StrategyReport{
-            total_invested: self.total_invested,
-            current_balance: self.last_reported_balance,
-            evaa_balance: self.current_evaa_balance,
-            lp_balance: self.current_lp_balance,
-            mode: self.strategy_mode
-        };
+    // DEX Integration
+    dedust_vault: Address;
+    
+    // DEX LP Logic
+    // We need to store where we are currently invested (LP vs Lending)
+    // For now, let's assume we can split funds or switch modes.
+    // To keep it simple for this MVP: 
+    // - EVAA is default for lending.
+    // - If we want to LP, we use specific messages.
+    // But the Strategy contract needs to hold LP tokens.
+
+    receive(msg: SwapToJetton) {
+        require(context().sender == self.admin_address, "Only admin"); 
+        
+        if (msg.dex_type == 0) {
+            // DeDust Swap Logic
+            send(SendParameters{
+                to: self.dedust_vault,
+                value: msg.amount + ton("0.15"),
+                mode: SendPayGasSeparately,
+                body: DedustSwap{
+                    query_id: 0,
+                    amount: msg.amount,
+                    min_amount_out: msg.min_amount_out,
+                    deadline: now() + 300,
+                    recipient: myAddress()
+                }.toCell()
+            });
+        } else if (msg.dex_type == 1) {
+            // STON.fi v2 Swap Logic (pTON -> USDT)
+            send(SendParameters{
+                to: self.stonfi_pton,
+                value: msg.amount + ton("0.3"),
+                mode: SendPayGasSeparately,
+                body: JettonTransfer{
+                    query_id: 0,
+                    amount: msg.amount,
+                    destination: self.stonfi_router,
+                    response_destination: myAddress(),
+                    custom_payload: null,
+                    forward_ton_amount: ton("0.24"),
+                    forward_payload: StonfiSwap{
+                        otherTokenWallet: self.usdt_wallet!!, // USDT Jetton Wallet of Strategy
+                        refundAddress: myAddress(),
+                        excessesAddress: myAddress(),
+                        deadline: (now() + 300),
+                        additionalData: SwapAdditionalData{
+                            minOut: msg.min_amount_out,
+                            receiverAddress: myAddress(),
+                            fwdGas: ton("0.15"),
+                            customPayload: null,
+                            refundFwdGas: 0,
+                            refundPayload: null,
+                            refFee: 10, // 0.1%
+                            referralAddress: self.admin_address
+                        }.toCell()
+                    }.toCell()
+                }.toCell()
+            });
+        }
     }
 
-    init(vault: Address, admin: Address, evaa_master: Address) {
+    // Removed duplicated get_strategy_data
+
+    init(vault: Address, admin: Address, evaa_master: Address, stonfi_router: Address, stonfi_pton: Address, dedust_factory: Address, usdt_master: Address, dedust_vault: Address) {
         self.vault_address = vault;
+        self.admin_address = admin;
+        self.evaa_master = evaa_master;
+        self.stonfi_router = stonfi_router;
+        self.stonfi_pton = stonfi_pton;
+        self.dedust_factory = dedust_factory;
+        self.usdt_master = usdt_master;
+        self.dedust_vault = dedust_vault;
+
         self.total_invested = 0;
         self.last_reported_balance = 0;
         self.current_evaa_balance = 0;
-        self.admin_address = admin;
-        self.evaa_master = evaa_master;
         self.current_health = 10000; // Safe start
         self.is_lp_active = false;
         self.pending_ton_for_lp = 0;
         self.current_lp_balance = 0;
         self.strategy_mode = 0; // Default to EVAA
-        
-        // TON Asset ID in EVAA Mainnet is 0
         self.ton_asset_id = 0; 
     }
 
@@ -201,35 +168,35 @@ contract Strategy {
                         body: JettonTransfer{
                             query_id: 0,
                             amount: msg.amount,
-                            destination: self.STONFI_ROUTER,
+                            destination: self.stonfi_router,
                             response_destination: myAddress(),
                             custom_payload: null,
                             forward_ton_amount: ton("0.3"),
                             forward_payload: StonfiProvideLiquidity{
-                                otherTokenWallet: self.STONFI_PTON,
+                                otherTokenWallet: self.stonfi_pton,
                                 minLpOut: 1, // Should be calculated or passed
                                 refundAddress: myAddress(),
                                 excessesAddress: myAddress(),
-                                deadline: (now() + 300).toUint64()
-                            }.toCell().asSlice()
+                                deadline: (now() + 300)
                         }.toCell()
-                    });
+                    }.toCell()
+                });
                     // Also need to send the TON side (handled by StonfiProvideLiquidity with pTON usually, 
                     // but here we send it separately or as part of the same flow if using router v2)
                     // For v2, we send USDT to router with pTON address as other token.
                     // The router will expect the other token (TON) to be sent as well.
                     send(SendParameters{
-                        to: self.STONFI_PTON,
+                        to: self.stonfi_pton,
                         value: self.pending_ton_for_lp + ton("0.1"),
                         mode: SendPayGasSeparately,
                         body: JettonTransfer{
                             query_id: 0,
                             amount: self.pending_ton_for_lp,
-                            destination: self.STONFI_ROUTER,
+                            destination: self.stonfi_router,
                             response_destination: myAddress(),
                             custom_payload: null,
                             forward_ton_amount: ton("0.05"),
-                            forward_payload: emptySlice()
+                            forward_payload: null
                         }.toCell()
                     });
                     
@@ -316,6 +283,8 @@ contract Strategy {
         self.total_invested = self.total_invested + msg.amount;
         self.last_reported_balance = self.last_reported_balance + msg.amount;
         
+        let swap_amount: Int = msg.amount / 2;
+
         if (self.strategy_mode == 0) {
             // MODE 0: EVAA Lending
             send(SendParameters{
@@ -334,18 +303,17 @@ contract Strategy {
             });
         } else if (self.strategy_mode == 1) {
             // MODE 1: STON.fi LP (TON/USDT)
-            let swap_amount: Int = msg.amount / 2;
             self.pending_ton_for_lp = msg.amount - swap_amount;
             
             // Swap 50% TON to USDT via STON.fi v2 (pTON -> USDT)
             send(SendParameters{
-                to: self.STONFI_PTON,
+                to: self.stonfi_pton,
                 value: swap_amount + ton("0.4"), // Extra for gas and forward fee
                 mode: SendPayGasSeparately,
                 body: JettonTransfer{
                     query_id: 0,
                     amount: swap_amount,
-                    destination: self.STONFI_ROUTER,
+                    destination: self.stonfi_router,
                     response_destination: myAddress(),
                     custom_payload: null,
                     forward_ton_amount: ton("0.24"),
@@ -353,9 +321,9 @@ contract Strategy {
                         otherTokenWallet: self.usdt_wallet!!,
                         refundAddress: myAddress(),
                         excessesAddress: myAddress(),
-                        deadline: (now() + 300).toUint64(),
+                        deadline: (now() + 300),
                         additionalData: SwapAdditionalData{
-                            minOut: 1, // Should be dynamic in production
+                            minOut: 1,
                             receiverAddress: myAddress(),
                             fwdGas: ton("0.15"),
                             customPayload: null,
@@ -363,30 +331,26 @@ contract Strategy {
                             refundPayload: null,
                             refFee: 10,
                             referralAddress: self.admin_address
-                        }
-                    }.toCell().asSlice()
+                        }.toCell()
+                    }.toCell()
                 }.toCell()
             });
         } else if (self.strategy_mode == 2) {
-            // MODE 2: DeDust LP (TON/USDT)
-            let swap_amount: Int = msg.amount / 2;
             self.pending_ton_for_lp = msg.amount - swap_amount;
             
             // Swap 50% TON to USDT via DeDust
-            if (self.dedust_vault != null) {
-                send(SendParameters{
-                    to: self.dedust_vault!!,
+            send(SendParameters{
+                to: self.dedust_vault,
                     value: swap_amount + ton("0.2"),
                     mode: SendPayGasSeparately,
                     body: DedustSwap{
                         query_id: 0,
                         amount: swap_amount,
                         min_amount_out: 1,
-                        deadline: now().toUint32() + 300,
+                        deadline: (now() + 300),
                         recipient: myAddress()
                     }.toCell()
-                });
-            }
+            });
         }
         
         // Confirm to Vault
@@ -506,7 +470,7 @@ contract Strategy {
         // 1. Time Lock (1 Hour)
         let last_time: Int? = self.last_harvest_time.get(ctx.sender);
         if (last_time != null) {
-            require(now() > last_time!! + 3600, "Wait 1 hour!");
+           require(now() > last_time!! + 3600, "Wait 1 hour!");
         }
 
         // Use REAL data from EVAA (updated via EvaaUserScData)
@@ -557,8 +521,8 @@ contract Strategy {
             
             send(SendParameters{
                 to: self.vault_address,
-                value: 0,
-                mode: SendRemainingValue,
+                value: ton("0.01"),
+                mode: SendPayGasSeparately,
                 body: UpdatePPS{ new_assets_value: current_balance - bonus }.toCell()
             });
             
@@ -613,6 +577,40 @@ contract Strategy {
     
     get fun balance(): Int {
         return self.total_invested;
+    }
+
+    receive(msg: SetDexAddresses) {
+        require(context().sender == self.admin_address, "Only admin");
+        self.dedust_factory = msg.dedust_factory;
+        self.dedust_vault = msg.dedust_vault;
+        self.stonfi_router = msg.stonfi_router;
+        self.stonfi_pton = msg.stonfi_pton;
+        self.usdt_master = msg.usdt_master;
+    }
+
+    receive(msg: SetJettonWallets) {
+        require(context().sender == self.admin_address, "Only admin");
+        if (msg.usdt != null) {
+            self.usdt_wallet = msg.usdt;
+        }
+        if (msg.lp_token != null) {
+            self.lp_token_wallet = msg.lp_token;
+        }
+    }
+
+    receive(msg: SetEvaaMaster) {
+        require(context().sender == self.admin_address, "Only admin");
+        self.evaa_master = msg.evaa_master;
+    }
+
+    receive(msg: SetStrategyMode) {
+        require(context().sender == self.admin_address, "Only admin");
+        self.strategy_mode = msg.mode;
+    }
+
+    receive(msg: SetAssetId) {
+        require(context().sender == self.admin_address, "Only admin");
+        self.ton_asset_id = msg.asset_id;
     }
 
     get fun get_strategy_data(): StrategyData {

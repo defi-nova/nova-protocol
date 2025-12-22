@@ -39,7 +39,16 @@ describe('Vault Yield Aggregator Tests', () => {
         });
 
         // 2. Deploy Strategy with real Vault address and EVAA Mock
-        strategy = blockchain.openContract(await Strategy.fromInit(vault.address, admin.address, evaaMaster.address));
+        strategy = blockchain.openContract(await Strategy.fromInit(
+            vault.address, 
+            admin.address, 
+            evaaMaster.address,
+            admin.address, // stonfi_router
+            admin.address, // stonfi_pton
+            admin.address, // dedust_factory
+            admin.address, // usdt_master
+            admin.address  // dedust_vault
+        ));
         
         const deployStrategyResult = await deployer.send({
             to: strategy.address,
@@ -115,7 +124,7 @@ describe('Vault Yield Aggregator Tests', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vault.address,
             to: strategy.address,
-            op: 0x08, // Invest
+            op: 0x88, // Invest
             success: true
         });
 
@@ -259,7 +268,7 @@ describe('Vault Yield Aggregator Tests', () => {
         expect(depositResult.transactions).toHaveTransaction({
             from: vault.address,
             to: strategy.address,
-            op: 0x08, // Invest
+            op: 0x88, // Invest
             success: true
         });
 
@@ -291,6 +300,16 @@ describe('Vault Yield Aggregator Tests', () => {
         // Use the same Asset ID as in Strategy contract
         const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
         
+        // Set Asset ID in Strategy
+        await strategy.send(
+            admin.getSender(),
+            { value: toNano('0.05') },
+            {
+                $$type: 'SetAssetId',
+                asset_id: tonAssetId
+            }
+        );
+
         // Define Custom Dictionary Value for EvaaAssetData
         const EvaaAssetDataValue = {
             serialize: (src: any, builder: Builder) => {
@@ -566,6 +585,12 @@ describe('Vault Yield Aggregator Tests', () => {
 
         // Simulate profit from EVAA (5% yield)
         const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
+
+        // Set Asset ID for Strategy
+        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
+            $$type: 'SetAssetId', asset_id: tonAssetId
+        });
+
         const EvaaAssetDataValue = {
             serialize: (src: any, builder: Builder) => {
                 builder.storeCoins(src.balance);
@@ -628,6 +653,12 @@ describe('Vault Yield Aggregator Tests', () => {
 
         // Generate 10% yield (150 -> 165)
         const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
+
+        // Set Asset ID for Strategy
+        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
+            $$type: 'SetAssetId', asset_id: tonAssetId
+        });
+
         const EvaaAssetDataValue = {
             serialize: (src: any, builder: Builder) => {
                 builder.storeCoins(src.balance);
@@ -776,7 +807,16 @@ describe('Vault Yield Aggregator Tests', () => {
         });
 
         // Deploy new strategy
-        const newStrategy = blockchain.openContract(await Strategy.fromInit(vault.address, admin.address, evaaMaster.address));
+        const newStrategy = blockchain.openContract(await Strategy.fromInit(
+            vault.address, 
+            admin.address, 
+            evaaMaster.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address
+        ));
         await deployer.send({
             to: newStrategy.address,
             value: toNano('0.1'),

@@ -26,11 +26,22 @@ export async function run(provider: NetworkProvider) {
     console.log('Vault deployed at:', vault.address);
 
     // 2. Deploy Strategy
-    // Mainnet EVAA Master address (Main Pool)
-    // We can always update it via SetEvaaMaster to switch to LP Pool
+    // Mainnet Protocol Addresses
     const evaa_master = Address.parse("EQCD39VS5jcptHL8vMjEXrzGaRcCV4m6Ctj9b70m5A4-R-P3");
+    const stonfi_router = Address.parse("EQB3n9NWuHqhRM9PaPISTPoo6Y6Br8_s7U_8Y5is6FscBR8");
+    const stonfi_pton = Address.parse("EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez");
+    const dedust_factory = Address.parse("EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67");
+    const usdt_master = Address.parse("EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs");
     
-    const strategy = provider.open(await Strategy.fromInit(vault.address, admin, evaa_master));
+    const strategy = provider.open(await Strategy.fromInit(
+        vault.address, 
+        admin, 
+        evaa_master,
+        stonfi_router,
+        stonfi_pton,
+        dedust_factory,
+        usdt_master
+    ));
     
     console.log('Deploying Strategy...');
     await strategy.send(
@@ -53,8 +64,10 @@ export async function run(provider: NetworkProvider) {
         },
         {
             $$type: 'SetDexAddresses',
-            dedust: Address.parse("EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67"), // DeDust Factory
-            stonfi: Address.parse("EQB3n2A6zvbx99ZEue2W_4FyBKiUSJmHOqS44vN9S6H6Bst4")  // STON.fi V1 Router
+            dedust_factory: dedust_factory,
+            stonfi_router: stonfi_router,
+            stonfi_pton: stonfi_pton,
+            usdt_master: usdt_master
         }
     );
 

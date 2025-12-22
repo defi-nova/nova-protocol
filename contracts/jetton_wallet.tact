@@ -22,13 +22,6 @@ contract JettonWallet {
         self.balance = self.balance - msg.amount;
         require(self.balance >= 0, "Invalid balance");
 
-        let fwdFee: Int = ctx.readForwardFee();
-        let fwdCount: Int = 1;
-        if (msg.forward_ton_amount > 0) {
-            fwdCount = 2;
-        }
-        
-
         let init: StateInit = initOf JettonWallet(self.master, msg.destination);
         let walletAddress: Address = contractAddress(init);
 

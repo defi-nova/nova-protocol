@@ -30,7 +30,16 @@ describe('Vault Security & Scalability', () => {
             init: vault.init,
         });
 
-        strategy = blockchain.openContract(await Strategy.fromInit(vault.address, admin.address, evaaMaster.address));
+        strategy = blockchain.openContract(await Strategy.fromInit(
+            vault.address, 
+            admin.address, 
+            evaaMaster.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address
+        ));
         
         await deployer.send({
             to: strategy.address,

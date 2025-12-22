@@ -40,11 +40,25 @@ describe('Public Testing Scenarios (Multi-User & PPS Jumps)', () => {
         vault = blockchain.openContract(await Vault.fromInit(admin.address, recovery.address, content));
         await deployer.send({ to: vault.address, value: toNano('0.1'), init: vault.init });
 
-        strategy = blockchain.openContract(await Strategy.fromInit(vault.address, admin.address, evaaMaster.address));
+        strategy = blockchain.openContract(await Strategy.fromInit(
+            vault.address, 
+            admin.address, 
+            evaaMaster.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address,
+            admin.address
+        ));
         await deployer.send({ to: strategy.address, value: toNano('0.1'), init: strategy.init });
 
         await vault.send(admin.getSender(), { value: toNano('0.05') }, { 
             $$type: 'AddStrategy', strategy: strategy.address, weight: 10000n 
+        });
+
+        // Set Asset ID for Strategy
+        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
+            $$type: 'SetAssetId', asset_id: tonAssetId
         });
     });
 
