@@ -91,8 +91,3 @@ npx jest tests/AdvancedFeatures.spec.ts
 - `contracts/messages.tact`: Shared message types and structures.
 - `tests/`: Comprehensive TypeScript test suites using TON Sandbox.
 - `scripts/`: Deployment and management scripts.
-
----
-
-## ⚖️ Disclaimer
-This software is provided "as is" and any express or implied warranties are disclaimed. Use at your own risk. Decentralized finance (DeFi) involves significant risks, including smart contract vulnerabilities and market volatility.
