@@ -1,70 +1,98 @@
-# Yield Aggregator TON NOVA
+# TON NOVA: High-Performance Yield Aggregator
 
-Nova is a high-performance, multi-strategy yield aggregator for the TON blockchain. It optimizes returns by dynamically shifting capital between Lending protocols and Liquidity Pools (LP).
+**NOVA** is a decentralized, multi-strategy yield aggregator built on the TON blockchain. It is designed to maximize returns for users by automatically moving capital between lending protocols and decentralized exchanges (DEX) to capture the highest available yields.
 
-## 🚀 Global Updates (Latest)
+---
 
-- **STON.fi v2 Migration**: Fully migrated to STON.fi v2 protocol, implementing advanced swap logic and LP provision using the latest `0x6664de2a` opcode and `SwapAdditionalData` structures.
-- **LP Automation (Swap + Provide)**: Implemented "One-Click" LP provision. The strategy automatically splits TON, swaps 50% to USDT, and provides liquidity to the pool in a single rebalancing flow.
-- **TON-Native Architecture**: Optimized for the TON ecosystem. TON is now the sole primary asset for entry, eliminating the need for users to hold USDT to start earning.
-- **Dynamic Slippage & MEV Protection**: Integrated API-driven `min_amount_out` calculation for DEX operations to protect user funds from slippage and front-running.
-- **DeDust.io Integration**: Added support for DeDust.io LP strategies, providing diversification and access to multiple liquidity sources.
-- **Gas-Optimized Rebalancing**: Refined gas limits (0.35 TON) to support complex multi-step DeFi operations (Swap + LP) in a single transaction.
+## 🎯 Project Goals
 
-## Core Features
+The primary goal of NOVA is to simplify the DeFi experience on TON. Instead of manually managing positions across multiple protocols, users deposit TON into a single Vault, which then intelligently distributes the capital across various yield-generating strategies.
 
-### 🏦 Vault Contract (`vault.tact`)
-- **Multi-Strategy Architecture**: Supports multiple yield strategies simultaneously with weight-based allocation (Basis Points: 10000 = 100%).
-- **Price Per Share (PPS) Protection**: Implements `stored_balance` tracking to safeguard against PPS manipulation and flash loan attacks.
-- **Auto-Rebalancing**: Includes a `Rebalance` mechanism that automatically shifts funds between strategies to match target allocations based on real-time APY.
-- **Scalable Withdrawal Queue**: Processes withdrawals in batches to stay within TON gas limits, ensuring the protocol remains functional even with thousands of users.
-- **Circuit Breaker**: Global pause for deposits via `TogglePause` for emergency situations.
+- **Efficiency**: Minimize gas costs and complexity for the end user.
+- **Maximized Yield**: Access to lending (EVAA) and liquidity provision (STON.fi, DeDust) in one place.
+- **Automation**: Self-optimizing rebalancing based on real-time APY data.
+- **Security**: Robust safeguards against liquidation, price manipulation, and flash loans.
 
-### 🛡️ Strategy Contract (`strategy.tact`)
-- **EVAA Protocol Integration**: Native support for supply/borrow yield generation on EVAA Main Pool (TON Asset ID: 0).
-- **DEX LP Strategies**: Automated entry and exit for TON/USDT pairs on **STON.fi v2** and **DeDust.io**.
-- **Unified DEX Interface**: Support for `StonfiSwap`, `StonfiProvideLiquidity`, and `DedustSwap` messages.
-- **Bounced Message Handling**: Robust logic to handle failed external transactions and maintain accurate accounting.
+---
 
-## Key Mechanisms
+## 🏗️ Core Architecture
 
-- **PPS (Price Per Share)**: Tracks the value of vault assets relative to issued shares (scaled by 10^12).
-- **Strategy Migration**: Secure `MigrateStrategy` message with slippage protection (`min_amount_out`) for seamless movement between yield providers.
-- **Stored Balance**: Internal accounting that separates vault liquidity from total assets, providing a reliable baseline for yield calculations.
-- **Timelock (Optional Logic)**: Structure for timelocked actions to ensure decentralization and security.
+The protocol is split into two main components:
 
-## Testing & Validation
+### 1. The Vault (`vault.tact`)
+The Vault is the primary entry point for users. It manages the accounting of user funds using a **Price Per Share (PPS)** model.
+- **Shares (Jettons)**: When users deposit TON, they receive Vault Shares (Jettons) representing their portion of the pool.
+- **Multi-Strategy Management**: The Vault can hold multiple strategies simultaneously, each with a specific weight (e.g., 60% EVAA, 40% STON.fi).
+- **Batch Processing**: Designed to handle high-frequency interactions efficiently.
+- **Safety Measures**: Includes profit jump caps (max 20% profit increase per harvest) and emergency pause functions.
 
-The project uses a comprehensive testing framework based on `@ton/sandbox` and **Jest**.
+### 2. The Strategy (`strategy.tact`)
+Strategies are modular contracts that interact with external DeFi protocols.
+- **Lending Strategy**: Deposits TON into **EVAA** to earn interest and potentially borrow assets for leveraged yield.
+- **LP Strategy**: Automatically provides liquidity to **STON.fi v2** or **DeDust.io**. It handles the complex "One-Click" flow: swapping 50% of incoming TON to USDT and providing the pair to the pool.
+- **Profit Harvesting**: Strategies collect rewards and report them back to the Vault, increasing the PPS for all share holders.
 
-### Test Suites:
-- `Vault.spec.ts`: Core vault logic (deposits, withdrawals, PPS tracking).
-- `VaultSecurity.spec.ts`: Security boundary testing (unauthorized access, profit caps, circuit breakers).
-- `PublicTestingScenarios.spec.ts`: Complex multi-user scenarios simulating real-world testnet behavior and PPS jumps.
-- `AdvancedFeatures.spec.ts`: Validation of the `Rebalance` mechanism and DEX swap logic.
+---
 
-### Running Tests:
+## ✨ Key Features
+
+### 🔄 Dynamic Rebalancing
+The protocol includes an `optimize_and_rebalance` mechanism. Based on APY data provided by an oracle or admin, the Vault automatically adjusts the distribution of funds between strategies to prioritize the most profitable ones.
+
+### ⚡ One-Click Liquidity Provision
+Moving from TON to a TON/USDT LP position usually requires multiple manual swaps and deposits. NOVA automates this entire flow within a single transaction, including slippage protection.
+
+### 🛡️ Advanced Security
+- **Health Factor Monitoring**: For lending strategies, NOVA monitors the Health Factor (HF) to prevent liquidations.
+- **Price-Per-Share Protection**: Safeguards against "sandwich" attacks and PPS manipulation during deposits and withdrawals.
+- **Admin-Controlled Upgrades**: Critical protocol addresses (DEX routers, pTON, etc.) can be updated by the admin without redeploying the contract.
+- **Time-Locked Harvesting**: Prevents excessive harvesting calls and ensures stable profit reporting.
+
+---
+
+## 🛠️ Supported Protocols
+
+- **EVAA**: Lending and borrowing on the TON Main Pool.
+- **STON.fi v2**: High-efficiency swaps and liquidity provision.
+- **DeDust.io**: Flexible liquidity pools and vaults.
+
+---
+
+## 🚀 Getting Started
+
+### Installation
 ```bash
-# Build contracts
-npx blueprint build Vault
-npx blueprint build Strategy
+npm install
+```
 
+### Compiling Contracts
+```bash
+# Compile the Vault
+npx blueprint build Vault
+
+# Compile the Strategy
+npx blueprint build Strategy
+```
+
+### Running Tests
+The project features a rigorous test suite covering all core functions and edge cases.
+```bash
 # Run all tests
 npm test
 
-# Run specific suite
+# Run specific features (Rebalance, DEX)
 npx jest tests/AdvancedFeatures.spec.ts
 ```
 
-## Project Structure
-- `contracts/`: Tact source code.
-- `contracts/messages.tact`: Unified message definitions for cross-contract communication.
-- `tests/`: TypeScript test suites using TON Sandbox.
-- `build/`: Compiled artifacts (BOC and wrappers).
+---
 
-## Technologies Used
-- **Tact**: Domain-specific language for TON smart contracts.
-- **TON Blockchain**: The underlying decentralized network.
-- **Blueprint**: Development environment for TON.
-- **EVAA Protocol**: Integrated yield source.
-- **DeDust / STON.fi**: Integrated DEX protocols.
+## 📂 Project Structure
+- `contracts/`: Tact smart contract source code.
+- `contracts/messages.tact`: Shared message types and structures.
+- `tests/`: Comprehensive TypeScript test suites using TON Sandbox.
+- `scripts/`: Deployment and management scripts.
+
+---
+
+## ⚖️ Disclaimer
+This software is provided "as is" and any express or implied warranties are disclaimed. Use at your own risk. Decentralized finance (DeFi) involves significant risks, including smart contract vulnerabilities and market volatility.
