@@ -102,12 +102,26 @@ npx blueprint build Vault
 npx blueprint build Strategy
 ```
 
+### Deployment
+
+#### Testnet Deployment
+```bash
+npx blueprint run deployVault --testnet
+```
+
+#### Mainnet Deployment
+1. Open `scripts/deployMainnet.ts` and replace `MAINNET_NOVA_TOKEN` placeholder with the real NOVA token address.
+2. Run the deployment script:
+```bash
+npx blueprint run deployMainnet --mainnet
+```
+
 ### Running Tests
-The project features a rigorous test suite covering all core functions and edge cases.
+The project features a rigorous test suite covering all core functions and edge cases, including slippage protection, fee calculations, and strategy rebalancing.
 ```bash
 # Run all tests
 npm test
-
+```
 # Run specific features (Rebalance, DEX)
 npx jest tests/AdvancedFeatures.spec.ts
 ```

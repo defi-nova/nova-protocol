@@ -5,6 +5,7 @@ message(0x75) Deposit {
 
 message(0x88) Invest {
     amount: Int as coins;
+    min_amount_out: Int as coins; // Slippage protection
 }
 
 message(0x15) Harvest {
@@ -22,6 +23,7 @@ message(0x44) UpdatePPS {
 
 message(0x09) Divest {
     amount: Int as coins;
+    min_amount_out: Int as coins; // Slippage protection
 }
 
 // TEP-74 Jetton Messages

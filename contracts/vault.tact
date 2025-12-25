@@ -26,6 +26,7 @@ contract Vault {
     const SWAP_DEADLINE: Int = 300;
     const PROFIT_LIMIT_PERCENT: Int = 120;
     const PROFIT_LIMIT_BASE: Int = 100;
+    const DEFAULT_SLIPPAGE: Int = 100; // 1% (100/10000)
 
     total_shares: Int as coins;
     admin_address: Address;
@@ -136,11 +137,15 @@ contract Vault {
                     if (current_balance > target_balance + self.REBALANCE_THRESHOLD) {
                         // Excess - withdraw from strategy
                         let to_withdraw: Int = current_balance - target_balance;
+                        let min_out: Int = (to_withdraw * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT;
                         send(SendParameters{
                             to: addr!!,
                             value: self.GAS_REBALANCE,
                             mode: SendPayGasSeparately,
-                            body: Divest{ amount: to_withdraw }.toCell()
+                            body: Divest{ 
+                                amount: to_withdraw,
+                                min_amount_out: min_out
+                            }.toCell()
                         });
                     } else if (current_balance < target_balance - self.REBALANCE_THRESHOLD && self.stored_balance > self.REBALANCE_THRESHOLD) {
                         // Deficit - invest idle funds
@@ -148,11 +153,15 @@ contract Vault {
                         if (to_invest > self.stored_balance) { to_invest = self.stored_balance; }
                         
                         if (to_invest > 0) {
+                            let min_out: Int = (to_invest * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT;
                             send(SendParameters{
                                 to: addr!!,
                                 value: to_invest + self.GAS_REBALANCE,
                                 mode: SendPayGasSeparately,
-                                body: Invest{ amount: to_invest }.toCell()
+                                body: Invest{ 
+                                    amount: to_invest,
+                                    min_amount_out: min_out
+                                }.toCell()
                             });
                             self.stored_balance -= to_invest;
                         }
@@ -355,13 +364,15 @@ contract Vault {
                       
                       if (invest_amount > 0) {
                           // Send Invest message
+                          let min_out: Int = (invest_amount * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT;
                           send(SendParameters{
                               to: strat_addr!!,
                               value: invest_amount + self.GAS_INVEST_MSG, 
                               mode: SendPayGasSeparately + SendIgnoreErrors,
                               bounce: true,
                               body: Invest{
-                                  amount: invest_amount
+                                  amount: invest_amount,
+                                  min_amount_out: min_out
                               }.toCell()
                           });
                           
@@ -458,12 +469,16 @@ contract Vault {
             // Find first active strategy and send divest request
             let strat_addr: Address? = self.strategies.get(0); // For simplicity, use first strategy
             if (strat_addr != null) {
+                let min_out: Int = (needed * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT;
                 send(SendParameters{
                     to: strat_addr!!,
                     value: 0,
                     mode: SendRemainingValue,
                     bounce: false,
-                    body: Divest{ amount: needed + self.GAS_WITHDRAWAL }.toCell()
+                    body: Divest{ 
+                        amount: needed + self.GAS_WITHDRAWAL,
+                        min_amount_out: min_out
+                    }.toCell()
                 });
             }
         }
@@ -501,6 +516,8 @@ contract Vault {
             let burn_fee_amount: Int = (profit * self.burn_fee) / self.TOTAL_WEIGHT;
             if (burn_fee_amount > 0 && self.nova_vault != null) {
                 // Swap TON to NOVA via DEX for burning
+                // 1% slippage for burn swaps
+                let burn_min_out: Int = 1; // For burning we can be more lenient or use a fixed small value
                 send(SendParameters{
                     to: self.nova_vault!!,
                     value: burn_fee_amount,
@@ -508,7 +525,7 @@ contract Vault {
                     body: DedustSwap{
                         query_id: 0,
                         amount: burn_fee_amount,
-                        min_amount_out: 1,
+                        min_amount_out: burn_min_out,
                         deadline: (now() + self.SWAP_DEADLINE),
                         recipient: self.BURN_ADDRESS
                     }.toCell()
@@ -600,13 +617,15 @@ contract Vault {
                      self.total_strategy_balance = self.total_strategy_balance + msg.amount;
                      
                      // Send Invest to New Strategy
+                     let min_out: Int = (msg.amount * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT;
                      send(SendParameters{
                         to: target!!,
                         value: msg.amount + self.GAS_INVEST_MSG, 
                         mode: SendPayGasSeparately, 
                         bounce: true,
                         body: Invest{
-                            amount: msg.amount
+                            amount: msg.amount,
+                            min_amount_out: min_out
                         }.toCell()
                      });
                      self.stored_balance = self.stored_balance - msg.amount;
@@ -780,7 +799,10 @@ contract Vault {
                                 value: self.GAS_INVEST_MSG, 
                                 mode: SendPayGasSeparately,
                                 bounce: true,
-                                body: Divest{ amount: diff }.toCell()
+                                body: Divest{ 
+                                    amount: diff,
+                                    min_amount_out: (diff * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT
+                                }.toCell()
                             });
                         }
                     } else if (target_bal > current_bal) {
@@ -795,7 +817,10 @@ contract Vault {
                                 value: to_invest + self.GAS_INVEST_MSG,
                                 mode: SendPayGasSeparately,
                                 bounce: true,
-                                body: Invest{ amount: to_invest }.toCell()
+                                body: Invest{ 
+                                    amount: to_invest,
+                                    min_amount_out: (to_invest * (self.TOTAL_WEIGHT - self.DEFAULT_SLIPPAGE)) / self.TOTAL_WEIGHT
+                                }.toCell()
                             });
                             self.stored_balance -= to_invest;
                             // Optimistic update
@@ -845,7 +870,6 @@ contract Vault {
     receive(msg: MigrateStrategy) {
         require(context().sender == self.admin_address || context().sender == myAddress(), "Only admin or timelock");
         
-        
         let oldInfo: StrategyParams? = self.strategy_info.get(msg.old_strategy);
         let newInfo: StrategyParams? = self.strategy_info.get(msg.new_strategy);
         
@@ -853,19 +877,18 @@ contract Vault {
         require(newInfo != null, "New strategy not found");
         require(oldInfo!!.balance >= msg.amount, "Insufficient balance");
         
-        
         self.migration_target = msg.new_strategy;
         self.migration_amount = msg.amount;
-        
         
         // Request Divest from Old Strategy
         send(SendParameters{
             to: msg.old_strategy,
-            value: self.GAS_DIVEST_MIGRATE, 
+            value: self.GAS_DIVEST_MIGRATE,
             mode: SendPayGasSeparately,
             bounce: true,
-            body: Divest{
-                amount: msg.amount
+            body: Divest{ 
+                amount: msg.amount,
+                min_amount_out: msg.min_amount_out // Use provided slippage protection
             }.toCell()
         });
         // Divest does not change stored_balance

@@ -24,6 +24,7 @@ export async function run(provider: NetworkProvider) {
             $$type: 'AddStrategy',
             strategy: strategyAddress,
             weight: 10000n, // 100% веса
+            is_nova: false
         }
     );
 

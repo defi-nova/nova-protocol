@@ -95,7 +95,7 @@ contract Strategy {
                             forward_ton_amount: self.GAS_DIVEST, // Reusing divest gas for forward
                             forward_payload: StonfiProvideLiquidity{
                                 otherTokenWallet: self.stonfi_pton,
-                                minLpOut: 1, 
+                                minLpOut: 1, // We could also add slippage for LP tokens if needed
                                 refundAddress: myAddress(),
                                 excessesAddress: myAddress(),
                                 deadline: (now() + self.SWAP_DEADLINE)
@@ -195,7 +195,7 @@ contract Strategy {
                                 excessesAddress: myAddress(),
                                 deadline: (now() + self.SWAP_DEADLINE),
                                 additionalData: SwapAdditionalData{
-                                    minOut: 1,
+                                    minOut: msg.min_amount_out / 2, // Use slippage from vault (50% because we swap half)
                                     receiverAddress: myAddress(),
                                     fwdGas: self.GAS_STONFI_FEE,
                                     customPayload: null,
@@ -221,7 +221,7 @@ contract Strategy {
                     body: DedustSwap{
                         query_id: 0,
                         amount: swap_amount,
-                        min_amount_out: 1,
+                        min_amount_out: msg.min_amount_out / 2, // Use slippage from vault
                         deadline: (now() + self.SWAP_DEADLINE),
                         recipient: myAddress()
                     }.toCell()
@@ -239,7 +239,7 @@ contract Strategy {
                         body: DedustSwap{
                             query_id: 0,
                             amount: swap_amount,
-                            min_amount_out: 1,
+                            min_amount_out: msg.min_amount_out / 2, // Use slippage from vault
                             deadline: (now() + self.SWAP_DEADLINE),
                             recipient: myAddress()
                         }.toCell()

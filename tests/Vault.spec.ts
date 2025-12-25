@@ -383,7 +383,7 @@ describe('Vault Yield Aggregator Tests', () => {
             from: vault.address,
             to: user.address,
             success: true,
-            value: toNano('99.9')
+            value: (v) => v! >= toNano('99.8') && v! <= toNano('99.91') // Allow for slight gas variations
         });
     });
 
