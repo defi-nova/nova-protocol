@@ -11,7 +11,6 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
     let vault: SandboxContract<Vault>;
     let strategy1: SandboxContract<Strategy>;
     let strategy2: SandboxContract<Strategy>;
-    let evaaMaster: SandboxContract<TreasuryContract>;
     let recovery: SandboxContract<TreasuryContract>;
     let mockStonfiRouter: SandboxContract<TreasuryContract>;
     let mockStonfiPton: SandboxContract<TreasuryContract>;
@@ -25,7 +24,6 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         blockchain = await Blockchain.create();
         admin = await blockchain.treasury('admin');
         user = await blockchain.treasury('user');
-        evaaMaster = await blockchain.treasury('evaa');
         recovery = await blockchain.treasury('recovery');
 
         const content = beginCell().storeUint(0, 8).endCell();
@@ -41,7 +39,6 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         strategy1 = blockchain.openContract(await Strategy.fromInit(
             vault.address, 
             admin.address, 
-            evaaMaster.address,
             mockStonfiRouter.address,
             mockStonfiPton.address,
             mockDedustFactory.address,
@@ -54,7 +51,6 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         const strategy2Init = await Strategy.fromInit(
             vault.address, 
             recovery.address, 
-            evaaMaster.address,
             mockStonfiRouter.address,
             mockStonfiPton.address,
             mockDedustFactory.address,
@@ -72,12 +68,14 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         const add1 = await vault.send(admin.getSender(), { value: toNano('0.1') }, {
             $$type: 'AddStrategy',
             strategy: strategy1.address,
-            weight: 7000n
+            weight: 7000n,
+            is_nova: false
         });
         const add2 = await vault.send(admin.getSender(), { value: toNano('0.1') }, {
             $$type: 'AddStrategy',
             strategy: strategy2.address,
-            weight: 3000n
+            weight: 3000n,
+            is_nova: false
         });
         
         expect(add1.transactions).toHaveTransaction({ to: vault.address, success: true });
@@ -140,29 +138,11 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         });
     });
 
+    /* 
     it('should handle DEX swap requests in strategy', async () => {
-        // Ensure strategy has TON for swap fees
-        await admin.send({
-            to: strategy1.address,
-            value: toNano('1.0')
-        });
-
-        // Trigger Swap
-        const swapResult = await strategy1.send(admin.getSender(), { value: toNano('0.2') }, {
-            $$type: 'SwapToJetton',
-            dex_type: 0n, // DeDust
-            amount: toNano('0.1'), // Smaller amount to ensure enough for fees
-            min_amount_out: 0n
-        });
-
-        // Verify message to DeDust
-        expect(swapResult.transactions).toHaveTransaction({
-            from: strategy1.address,
-            to: mockDedustVault.address,
-            op: 0xe3a0f35, // DedustSwap
-            success: true
-        });
+        // ... removed SwapToJetton ...
     });
+    */
 
     it('should handle STON.fi v2 LP investment flow', async () => {
         const usdtWallet = await blockchain.treasury('usdt_wallet');
@@ -171,13 +151,14 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
         // 1. Setup Strategy for STON.fi LP
         await strategy1.send(admin.getSender(), { value: toNano('0.1') }, {
             $$type: 'SetStrategyMode',
-            mode: 1n // STON.fi LP
+            mode: 0n // STON.fi LP
         });
 
         await strategy1.send(admin.getSender(), { value: toNano('0.1') }, {
             $$type: 'SetJettonWallets',
             usdt: usdtWallet.address,
-            lp_token: lpTokenWallet.address
+            lp_token: lpTokenWallet.address,
+            nova: admin.address
         });
 
         // Deposit funds to vault so it has something to invest
@@ -240,8 +221,8 @@ describe('Advanced Features: Rebalance and DEX Integration', () => {
 
         expect(info1?.weight).toBe(6000n); // Capped at 60%
         // Strat2 gets the remaining or proportional? 
-        // Logic: (1000 * 10000) / 3000 = 3333
-        expect(info2?.weight).toBe(3333n);
+        // Logic: (1000 * 9500) / 3000 = 3166
+        expect(info2?.weight).toBe(3166n);
     });
 
     it('should allow admin to update DEX addresses', async () => {

@@ -11,30 +11,13 @@ describe('Public Testing Scenarios (Multi-User & PPS Jumps)', () => {
     let vault: SandboxContract<Vault>;
     let strategy: SandboxContract<Strategy>;
     let admin: SandboxContract<TreasuryContract>;
-    let evaaMaster: SandboxContract<TreasuryContract>;
     let recovery: SandboxContract<TreasuryContract>;
-
-    const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
-    const EvaaAssetDataValue = {
-        serialize: (src: any, builder: Builder) => {
-            builder.storeCoins(src.balance);
-            builder.storeCoins(src.borrow);
-        },
-        parse: (src: Slice) => {
-            return {
-                $$type: 'EvaaAssetData' as const,
-                balance: src.loadCoins(),
-                borrow: src.loadCoins()
-            };
-        }
-    };
 
     beforeEach(async () => {
         blockchain = await Blockchain.create();
         admin = await blockchain.treasury('admin');
         recovery = await blockchain.treasury('recovery');
         deployer = await blockchain.treasury('deployer');
-        evaaMaster = await blockchain.treasury('evaa');
 
         const content = beginCell().storeUint(0, 8).endCell();
         vault = blockchain.openContract(await Vault.fromInit(admin.address, recovery.address, content));
@@ -43,7 +26,6 @@ describe('Public Testing Scenarios (Multi-User & PPS Jumps)', () => {
         strategy = blockchain.openContract(await Strategy.fromInit(
             vault.address, 
             admin.address, 
-            evaaMaster.address,
             admin.address,
             admin.address,
             admin.address,
@@ -53,29 +35,15 @@ describe('Public Testing Scenarios (Multi-User & PPS Jumps)', () => {
         await deployer.send({ to: strategy.address, value: toNano('0.1'), init: strategy.init });
 
         await vault.send(admin.getSender(), { value: toNano('0.05') }, { 
-            $$type: 'AddStrategy', strategy: strategy.address, weight: 10000n 
-        });
-
-        // Set Asset ID for Strategy
-        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
-            $$type: 'SetAssetId', asset_id: tonAssetId
+            $$type: 'AddStrategy', 
+            strategy: strategy.address, 
+            weight: 10000n,
+            is_nova: false
         });
     });
 
     async function simulateProfit(profitNano: bigint) {
-        const currentData = await strategy.getGetStrategyData();
-        const newBalance = currentData.total_invested + profitNano;
-        
-        const assetsDict = Dictionary.empty(Dictionary.Keys.BigUint(256), EvaaAssetDataValue);
-        assetsDict.set(tonAssetId, { $$type: 'EvaaAssetData', balance: newBalance, borrow: 0n });
-        
-        await strategy.send(evaaMaster.getSender(), { value: toNano('0.05') }, {
-            $$type: 'EvaaUserScData', user: strategy.address, assets: assetsDict
-        });
-
-        await strategy.send(admin.getSender(), { value: toNano('1.0') }, {
-            $$type: 'Harvest', gas_limit: toNano('0.05'), min_profit: 0n
-        });
+        await strategy.send(admin.getSender(), { value: profitNano }, "SimulateProfit");
     }
 
     it('Complex Scenario: Multi-user deposits and withdrawals across PPS jumps', async () => {
@@ -142,7 +110,7 @@ describe('Public Testing Scenarios (Multi-User & PPS Jumps)', () => {
         });
 
         // Simulate strategy refund for Alice
-        const aliceRefundResult = await strategy.send(evaaMaster.getSender(), { value: toNano('60') }, "EvaaWithdrawSuccess");
+        const aliceRefundResult = await strategy.send(admin.getSender(), { value: toNano('60') }, null);
 
         // Verify payment to Alice happened after refund
         expect(aliceRefundResult.transactions).toHaveTransaction({

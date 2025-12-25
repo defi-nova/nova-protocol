@@ -10,7 +10,6 @@ describe('Vault Security & Scalability', () => {
     let vault: SandboxContract<Vault>;
     let strategy: SandboxContract<Strategy>;
     let admin: SandboxContract<TreasuryContract>;
-    let evaaMaster: SandboxContract<TreasuryContract>;
     let recovery: SandboxContract<TreasuryContract>;
 
     beforeEach(async () => {
@@ -18,7 +17,6 @@ describe('Vault Security & Scalability', () => {
         admin = await blockchain.treasury('admin');
         recovery = await blockchain.treasury('recovery');
         deployer = await blockchain.treasury('deployer');
-        evaaMaster = await blockchain.treasury('evaa');
 
         const content = beginCell().storeUint(0, 8).endCell();
         
@@ -33,7 +31,6 @@ describe('Vault Security & Scalability', () => {
         strategy = blockchain.openContract(await Strategy.fromInit(
             vault.address, 
             admin.address, 
-            evaaMaster.address,
             admin.address,
             admin.address,
             admin.address,
@@ -53,7 +50,8 @@ describe('Vault Security & Scalability', () => {
             { 
                 $$type: 'AddStrategy',
                 strategy: strategy.address,
-                weight: 10000n
+                weight: 10000n,
+                is_nova: false
             }
         );
     });
@@ -182,10 +180,11 @@ describe('Vault Security & Scalability', () => {
         await vault.send(
             admin.getSender(),
             { value: toNano('0.05') },
-            { 
+            {
                 $$type: 'AddStrategy',
                 strategy: fakeStrat.address,
-                weight: 10000n
+                weight: 10000n,
+                is_nova: false
             }
         );
         

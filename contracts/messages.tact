@@ -3,14 +3,6 @@ message(0x75) Deposit {
     min_shares: Int as coins;
 }
 
-struct StrategyReport {
-    total_invested: Int as coins;
-    current_balance: Int as coins;
-    evaa_balance: Int as coins;
-    lp_balance: Int as coins;
-    mode: Int as uint8;
-}
-
 message(0x88) Invest {
     amount: Int as coins;
 }
@@ -131,41 +123,8 @@ message(0x40e10f03) DedustLiquidityDeposit {
     deadline: Int as uint32;
 }
 
-// EVAA Messages
-message(0x1) EvaaSupply {
-    query_id: Int as uint64;
-    amount: Int as coins;
-    user_address: Address;
-    include_user_code: Int as uint1;
-    amount_to_transfer: Int as coins;
-    payload: Cell?;
-}
-
-message(0x2) EvaaWithdraw {
-    query_id: Int as uint64;
-    amount: Int as coins;
-    user_address: Address;
-    include_user_code: Int as uint1;
-    amount_to_transfer: Int as coins;
-    payload: Cell?;
-}
-
-struct EvaaAssetData {
-    balance: Int as coins;
-    borrow: Int as coins;
-}
-
-message(0x3) EvaaUserScData {
-    user: Address;
-    assets: map<Int, EvaaAssetData>; // Assets Dictionary
-}
-
 message(0x68) WithdrawEmergency {
     amount: Int as coins;
-}
-
-message(0x67) SetEvaaMaster {
-    evaa_master: Address;
 }
 
 message SetDexAddresses {
@@ -179,18 +138,7 @@ message SetDexAddresses {
 message SetJettonWallets {
     usdt: Address?;
     lp_token: Address?;
-}
-
-message SwapToJetton {
-    dex_type: Int as uint8; // 0 for DeDust, 1 for STON.fi
-    amount: Int as coins;
-    min_amount_out: Int as coins;
-}
-
-// Internal
-message(0x99) Report {
-    profit: Int as coins;
-    loss: Int as coins;
+    nova: Address?;
 }
 
 message(0x100) SetStrategy {
@@ -200,6 +148,7 @@ message(0x100) SetStrategy {
 message(0x105) AddStrategy {
     strategy: Address;
     weight: Int as uint16; // Basis points (10000 = 100%)
+    is_nova: Bool;
 }
 
 message(0x106) SetStrategyAllocation {
@@ -227,11 +176,18 @@ message(0x102) PanicWithdraw {
 }
 
 message(0x55) StrategyRefund {
-    amount: Int as coins; // Optional: if we want to explicitly state amount, though value is attached
+    amount: Int as coins; 
 }
 
-message(0x66) SetAssetId {
-    asset_id: Int;
+message SetNovaToken {
+    nova_master: Address;
+    nova_vault: Address; // DEX Vault for NOVA/TON to burn
+}
+
+message SetFees {
+    performance_fee: Int as uint16; // Basis points (500 = 5%)
+    burn_fee: Int as uint16;        // Basis points (500 = 5%)
+    withdrawal_fee: Int as uint16;  // Basis points (10 = 0.1%)
 }
 
 message SetStrategyMode {
@@ -263,6 +219,14 @@ message ProcessWithdrawals {
 
 message(0x889) ExecuteTimelock {
     action_id: Int;
+}
+
+struct JettonData {
+    total_supply: Int as coins;
+    mintable: Bool;
+    admin_address: Address;
+    jetton_content: Cell;
+    jetton_wallet_code: Cell;
 }
 
 message(0x178d4519) JettonInternalTransfer {

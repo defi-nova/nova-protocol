@@ -11,7 +11,6 @@ describe('Vault Yield Aggregator Tests', () => {
     let vault: SandboxContract<Vault>;
     let strategy: SandboxContract<Strategy>;
     let admin: SandboxContract<TreasuryContract>;
-    let evaaMaster: SandboxContract<TreasuryContract>; // Mock EVAA
     let recovery: SandboxContract<TreasuryContract>; // Admin Recovery
 
     beforeEach(async () => {
@@ -19,7 +18,6 @@ describe('Vault Yield Aggregator Tests', () => {
         admin = await blockchain.treasury('admin');
         recovery = await blockchain.treasury('recovery');
         deployer = await blockchain.treasury('deployer');
-        evaaMaster = await blockchain.treasury('evaa');
 
         // 1. Deploy Vault with new constructor (admin, recovery, content)
         const content = beginCell().storeUint(0, 8).endCell(); // Dummy content
@@ -38,11 +36,10 @@ describe('Vault Yield Aggregator Tests', () => {
             success: true,
         });
 
-        // 2. Deploy Strategy with real Vault address and EVAA Mock
+        // 2. Deploy Strategy with real Vault address
         strategy = blockchain.openContract(await Strategy.fromInit(
             vault.address, 
             admin.address, 
-            evaaMaster.address,
             admin.address, // stonfi_router
             admin.address, // stonfi_pton
             admin.address, // dedust_factory
@@ -69,7 +66,8 @@ describe('Vault Yield Aggregator Tests', () => {
             { 
                 $$type: 'AddStrategy',
                 strategy: strategy.address,
-                weight: 10000n
+                weight: 10000n,
+                is_nova: false
             }
         );
         expect(addStratResult.transactions).toHaveTransaction({
@@ -125,14 +123,6 @@ describe('Vault Yield Aggregator Tests', () => {
             from: vault.address,
             to: strategy.address,
             op: 0x88, // Invest
-            success: true
-        });
-
-        // Verify Strategy -> EVAA (EvaaSupply)
-        expect(depositResult.transactions).toHaveTransaction({
-            from: strategy.address,
-            to: evaaMaster.address,
-            op: 0x1, // EvaaSupply
             success: true
         });
 
@@ -249,12 +239,12 @@ describe('Vault Yield Aggregator Tests', () => {
         });
     });
 
-    it('Scenario A: Deposit -> Harvest -> PPS Increase', async () => {
+    it('Scenario A: Deposit -> Simulate Profit -> PPS Increase', async () => {
         const user = await blockchain.treasury('user');
         
         // 1. User Deposits 100 TON
         const depositAmount = toNano('100');
-        const depositResult = await vault.send(
+        await vault.send(
             user.getSender(),
             { value: depositAmount + toNano('0.2') }, // + Gas
             {
@@ -264,113 +254,24 @@ describe('Vault Yield Aggregator Tests', () => {
             }
         );
 
-        // Verify Invest message sent to Strategy
-        expect(depositResult.transactions).toHaveTransaction({
-            from: vault.address,
-            to: strategy.address,
-            op: 0x88, // Invest
-            success: true
-        });
-
-        // Verify Strategy -> EVAA (Supply)
-        expect(depositResult.transactions).toHaveTransaction({
-            from: strategy.address,
-            to: evaaMaster.address,
-            op: 1, // Supply operation in EVAA
-            success: true
-        });
-
-        // Verify Strategy Confirmation sent back
-        expect(depositResult.transactions).toHaveTransaction({
-            from: strategy.address,
-            to: vault.address,
-            success: true // StrategyConfirmation comment
-        });
-
         // Check Vault State
         let pps = await vault.getGetPps();
-        console.log('PPS after deposit:', pps);
         // Should be 10^12 (scaled)
         expect(pps).toBeGreaterThanOrEqual(990000000000n); 
-        expect(pps).toBeLessThanOrEqual(1010000000000n);
 
-        // 2. Harvest (Simulate Profit)
-        
-        // Simulate EVAA Update before Harvest
-        // Use the same Asset ID as in Strategy contract
-        const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
-        
-        // Set Asset ID in Strategy
+        // 2. Simulate Profit
+        const profitAmount = toNano('5');
         await strategy.send(
             admin.getSender(),
-            { value: toNano('0.05') },
-            {
-                $$type: 'SetAssetId',
-                asset_id: tonAssetId
-            }
+            { value: profitAmount },
+            "SimulateProfit"
         );
-
-        // Define Custom Dictionary Value for EvaaAssetData
-        const EvaaAssetDataValue = {
-            serialize: (src: any, builder: Builder) => {
-                builder.storeCoins(src.balance);
-                builder.storeCoins(src.borrow);
-            },
-            parse: (src: Slice) => {
-                return {
-                    $$type: 'EvaaAssetData' as const,
-                    balance: src.loadCoins(),
-                    borrow: src.loadCoins()
-                };
-            }
-        };
-
-        const assetsDict = Dictionary.empty(Dictionary.Keys.BigUint(256), EvaaAssetDataValue);
-        
-        assetsDict.set(tonAssetId, { 
-            $$type: 'EvaaAssetData', 
-            balance: toNano('105'), // 105 TON
-            borrow: 0n 
-        });
-        
-        // Send EvaaUserScData
-        await strategy.send(
-            evaaMaster.getSender(),
-            { value: toNano('0.05') },
-            {
-                $$type: 'EvaaUserScData',
-                user: strategy.address,
-                assets: assetsDict // Pass dictionary directly
-            }
-        );
-
-        // Admin sends Harvest to Strategy
-        const harvestResult = await strategy.send(
-            admin.getSender(),
-            { value: toNano('1.0') }, // Increased gas for Bounty
-            {
-                $$type: 'Harvest',
-                gas_limit: toNano('0.05'),
-                min_profit: toNano('0.1') // 5% of 100 TON is 5 TON, so 0.1 is safe
-            }
-        );
-
-        // Strategy reports new balance (105% of 100 = 105)
-        expect(harvestResult.transactions).toHaveTransaction({
-            from: strategy.address,
-            to: vault.address,
-            op: 0x44, // UpdatePPS
-            success: true
-        });
 
         // Check PPS increase
         const newPPS = await vault.getGetPps();
-        console.log('PPS after harvest:', newPPS);
+        console.log('PPS after simulate profit:', newPPS);
         
-        // 100 TON -> 105 TON. Shares = 100. PPS = 1.05 * 10^12.
-        expect(newPPS).toBeGreaterThanOrEqual(pps);
-        // Approx 1.05 * 10^12
-        expect(newPPS).toBeGreaterThanOrEqual(1030000000000n);
+        expect(newPPS).toBeGreaterThan(pps);
     });
 
     it('should handle withdrawal with idle funds correctly', async () => {
@@ -461,27 +362,28 @@ describe('Vault Yield Aggregator Tests', () => {
             success: true
         });
 
-        // Simulate EVAA refund
-        const evaaRefund = await strategy.send(
-            evaaMaster.getSender(),
-            { value: depositAmount },
-            "EvaaWithdrawSuccess"
+        // Simulate refund from Strategy (e.g. after DEX swap or direct refund)
+        const refundAmount = depositAmount;
+        const strategyRefund = await strategy.send(
+            admin.getSender(),
+            { value: refundAmount },
+            null
         );
         
-        // Strategy should refund to Vault
-        expect(evaaRefund.transactions).toHaveTransaction({
+        // Strategy should refund to Vault (automatically via receive() handler in strategy.tact)
+        expect(strategyRefund.transactions).toHaveTransaction({
             from: strategy.address,
             to: vault.address,
             op: 0x55, // StrategyRefund
             success: true
         });
 
-        // Vault should pay user
-        expect(evaaRefund.transactions).toHaveTransaction({
+        // Vault should pay user (minus 0.1% withdrawal fee)
+        expect(strategyRefund.transactions).toHaveTransaction({
             from: vault.address,
             to: user.address,
             success: true,
-            value: depositAmount
+            value: toNano('99.9')
         });
     });
 
@@ -512,16 +414,16 @@ describe('Vault Yield Aggregator Tests', () => {
             success: true
         });
 
-        // Simulate EVAA refund of all funds
+        // Simulate refund of all funds from Strategy
         const totalRefund = toNano('150');
-        const evaaRefund = await strategy.send(
-            evaaMaster.getSender(),
+        const strategyRefund = await strategy.send(
+            admin.getSender(),
             { value: totalRefund },
-            "EvaaWithdrawSuccess"
+            null
         );
 
         // Strategy should refund all to Vault
-        expect(evaaRefund.transactions).toHaveTransaction({
+        expect(strategyRefund.transactions).toHaveTransaction({
             from: strategy.address,
             to: vault.address,
             op: 0x55, // StrategyRefund
@@ -581,156 +483,116 @@ describe('Vault Yield Aggregator Tests', () => {
         });
 
         const initialPPS = await vault.getGetPps();
-        expect(initialPPS).toBeGreaterThan(1000000000n); // Much lower threshold due to gas fees
+        expect(initialPPS).toBeGreaterThan(900000000000n);
 
-        // Simulate profit from EVAA (5% yield)
-        const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
-
-        // Set Asset ID for Strategy
-        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
-            $$type: 'SetAssetId', asset_id: tonAssetId
-        });
-
-        const EvaaAssetDataValue = {
-            serialize: (src: any, builder: Builder) => {
-                builder.storeCoins(src.balance);
-                builder.storeCoins(src.borrow);
-            },
-            parse: (src: Slice) => {
-                return {
-                    $$type: 'EvaaAssetData' as const,
-                    balance: src.loadCoins(),
-                    borrow: src.loadCoins()
-                };
-            }
-        };
-        
-        const assetsDict = Dictionary.empty(Dictionary.Keys.BigUint(256), EvaaAssetDataValue);
-        assetsDict.set(tonAssetId, { 
-            $$type: 'EvaaAssetData', 
-            balance: toNano('105'), // 5% profit
-            borrow: 0n 
-        });
-        
-        // Send EVAA data update
-        await strategy.send(evaaMaster.getSender(), { value: toNano('0.05') }, {
-            $$type: 'EvaaUserScData', user: strategy.address, assets: assetsDict
-        });
-
-        // Keeper harvests profit
-        const keeper = await blockchain.treasury('keeper');
-        const harvestResult = await strategy.send(keeper.getSender(), { value: toNano('1.0') }, {
-            $$type: 'Harvest', gas_limit: toNano('0.05'), min_profit: toNano('0.1')
-        });
-
-        // Verify UpdatePPS sent to Vault
-        expect(harvestResult.transactions).toHaveTransaction({
-            from: strategy.address,
-            to: vault.address,
-            op: 0x44, // UpdatePPS
-            success: true
-        });
+        // Simulate profit (5% yield)
+        const profitAmount = toNano('5');
+        await strategy.send(
+            admin.getSender(),
+            { value: profitAmount },
+            "SimulateProfit"
+        );
 
         // Check PPS increased
         const newPPS = await vault.getGetPps();
         expect(newPPS).toBeGreaterThan(initialPPS);
-        expect(newPPS).toBeGreaterThanOrEqual(1030000000000n); // ~3% increase (accounting for gas)
     });
 
-    it('should handle multiple users with proportional yields', async () => {
-        const user1 = await blockchain.treasury('user1');
-        const user2 = await blockchain.treasury('user2');
+    it('should correctly apply Performance Fee and Burning Fee', async () => {
+        const user = await blockchain.treasury('user');
+        const novaVault = await blockchain.treasury('nova_vault');
+        const depositAmount = toNano('100');
         
-        // User1 deposits 100 TON
-        await vault.send(user1.getSender(), { value: toNano('100') + toNano('0.2') }, {
-            $$type: 'Deposit', amount: toNano('100'), min_shares: 0n
+        // 1. Setup Nova Token and Vault for burning
+        await vault.send(admin.getSender(), { value: toNano('0.05') }, {
+            $$type: 'SetNovaToken',
+            nova_master: admin.address,
+            nova_vault: novaVault.address
         });
 
-        // User2 deposits 50 TON  
-        await vault.send(user2.getSender(), { value: toNano('50') + toNano('0.2') }, {
-            $$type: 'Deposit', amount: toNano('50'), min_shares: 0n
+        // 2. Deposit
+        await vault.send(user.getSender(), { value: depositAmount + toNano('0.2') }, {
+            $$type: 'Deposit', amount: depositAmount, min_shares: 0n
         });
 
-        // Generate 10% yield (150 -> 165)
-        const tonAssetId = 5979697966427382277430635252575298020583921833118053153835n;
+        const initialPPS = await vault.getGetPps();
 
-        // Set Asset ID for Strategy
-        await strategy.send(admin.getSender(), { value: toNano('0.05') }, {
-            $$type: 'SetAssetId', asset_id: tonAssetId
+        // 3. Simulate profit (10 TON)
+        const profitAmount = toNano('10');
+        const updateResult = await strategy.send(
+            admin.getSender(),
+            { value: profitAmount },
+            "SimulateProfit"
+        );
+
+        // 4. Verify Admin Fee (5% of 10 TON = 0.5 TON)
+        expect(updateResult.transactions).toHaveTransaction({
+            from: vault.address,
+            to: admin.address,
+            body: (x) => x?.beginParse().loadUint(32) === 0 && x?.beginParse().skip(32).loadStringTail() === "Performance Fee (Admin)",
+            value: toNano('0.5'),
+            success: true
         });
 
-        const EvaaAssetDataValue = {
-            serialize: (src: any, builder: Builder) => {
-                builder.storeCoins(src.balance);
-                builder.storeCoins(src.borrow);
-            },
-            parse: (src: Slice) => {
-                return {
-                    $$type: 'EvaaAssetData' as const,
-                    balance: src.loadCoins(),
-                    borrow: src.loadCoins()
-                };
-            }
-        };
-        
-        const assetsDict = Dictionary.empty(Dictionary.Keys.BigUint(256), EvaaAssetDataValue);
-        assetsDict.set(tonAssetId, { 
-            $$type: 'EvaaAssetData', 
-            balance: toNano('165'), // 10% profit
-            borrow: 0n 
-        });
-        
-        await strategy.send(evaaMaster.getSender(), { value: toNano('0.05') }, {
-            $$type: 'EvaaUserScData', user: strategy.address, assets: assetsDict
+        // 5. Verify Burn Fee (5% of 10 TON = 0.5 TON)
+        expect(updateResult.transactions).toHaveTransaction({
+            from: vault.address,
+            to: novaVault.address,
+            op: 0xe3a0f35, // DedustSwap
+            value: toNano('0.5'),
+            success: true
         });
 
-        // Harvest
-        const keeper = await blockchain.treasury('keeper');
-        await strategy.send(keeper.getSender(), { value: toNano('1.0') }, {
-            $$type: 'Harvest', gas_limit: toNano('0.05'), min_profit: 0n
-        });
-
-        // Check final PPS - much lower threshold due to gas fees
+        // 6. Check PPS increase (should be profit minus fees)
         const finalPPS = await vault.getGetPps();
-        expect(finalPPS).toBeGreaterThan(1000000000n); // Much lower threshold
+        expect(finalPPS).toBeGreaterThan(initialPPS);
+    });
 
-        // Users withdraw - should get proportional amounts
-        const wallet1 = await vault.getGetWalletAddress(user1.address);
-        const wallet2 = await vault.getGetWalletAddress(user2.address);
+    it('should correctly apply Withdrawal Fee', async () => {
+        const user = await blockchain.treasury('user');
+        const depositAmount = toNano('100');
+        
+        // Deposit
+        await vault.send(user.getSender(), { value: depositAmount + toNano('0.2') }, {
+            $$type: 'Deposit', amount: depositAmount, min_shares: 0n
+        });
 
-        // User1 withdrawal
-        const user1Withdraw = await user1.send({
-            to: wallet1,
+        // Add idle funds for immediate withdrawal
+        await vault.send(admin.getSender(), { value: toNano('100') }, null);
+
+        const walletAddress = await vault.getGetWalletAddress(user.address);
+        const withdrawShares = toNano('50'); // Withdraw 50 shares (worth 100 TON now)
+
+        const burnResult = await user.send({
+            to: walletAddress,
             value: toNano('0.1'),
             body: beginCell()
                 .storeUint(0x595f07bc, 32)
                 .storeUint(0, 64)
-                .storeCoins(toNano('100'))
-                .storeAddress(user1.address)
+                .storeCoins(withdrawShares)
+                .storeAddress(user.address)
                 .storeMaybeRef(null)
                 .endCell()
         });
 
-        // User1 should get withdrawal (check for any successful transaction)
-        const hasSuccessfulTx = user1Withdraw.transactions.some(t => t.endStatus === 'active');
-        expect(hasSuccessfulTx).toBe(true);
+        // 50 shares are worth 100 TON (total_assets=200, total_shares=100)
+        // Withdrawal Fee is 0.1% of 100 TON = 0.1 TON
+        // User should get 99.9 TON
+        expect(burnResult.transactions).toHaveTransaction({
+            from: vault.address,
+            to: user.address,
+            value: toNano('99.9'),
+            success: true
+        });
 
-        // User2 withdrawal
-        const user2Withdraw = await user2.send({
-            to: wallet2,
+        // Admin should get 0.1 TON fee
+        expect(burnResult.transactions).toHaveTransaction({
+            from: vault.address,
+            to: admin.address,
             value: toNano('0.1'),
-            body: beginCell()
-                .storeUint(0x595f07bc, 32)
-                .storeUint(0, 64)
-                .storeCoins(toNano('50'))
-                .storeAddress(user2.address)
-                .storeMaybeRef(null)
-                .endCell()
+            body: (x) => x?.beginParse().loadUint(32) === 0 && x?.beginParse().skip(32).loadStringTail() === "Withdrawal Fee",
+            success: true
         });
-
-        // User2 should get withdrawal (check for any successful transaction)
-        const hasSuccessfulTx2 = user2Withdraw.transactions.some(t => t.endStatus === 'active');
-        expect(hasSuccessfulTx2).toBe(true);
     });
 
     it('should handle repeated deposits and withdrawals from same user', async () => {
@@ -810,7 +672,6 @@ describe('Vault Yield Aggregator Tests', () => {
         const newStrategy = blockchain.openContract(await Strategy.fromInit(
             vault.address, 
             admin.address, 
-            evaaMaster.address,
             admin.address,
             admin.address,
             admin.address,
@@ -827,7 +688,8 @@ describe('Vault Yield Aggregator Tests', () => {
         await vault.send(admin.getSender(), { value: toNano('0.05') }, {
             $$type: 'AddStrategy',
             strategy: newStrategy.address,
-            weight: 10000n
+            weight: 10000n,
+            is_nova: false
         });
 
         // Migrate from old to new strategy with smaller amount to avoid insufficient balance

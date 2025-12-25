@@ -1,15 +1,51 @@
-import { toNano, beginCell, Address } from '@ton/core';
+import { toNano, beginCell, Address, Dictionary } from '@ton/core';
+import { sha256_sync } from '@ton/crypto';
 import { Vault } from '../build/Vault/Vault_Vault';
 import { Strategy } from '../build/Strategy/Strategy_Strategy';
 import { NetworkProvider } from '@ton/blueprint';
+
+// TEP-64 Helpers
+const ONCHAIN_CONTENT_PREFIX = 0x01; // 0x01 for on-chain
+const SNAKE_PREFIX = 0x00;
+
+function buildTokenMetadata(data: { [key: string]: string | undefined }): any {
+    const dict = Dictionary.empty(Dictionary.Keys.BigUint(256), Dictionary.Values.Cell());
+    
+    // Hash keys using sha256 as per TEP-64
+    const entries = Object.entries(data);
+    for (const [key, value] of entries) {
+        if (value) {
+            const keyHash = BigInt('0x' + sha256_sync(key).toString('hex'));
+            
+            // Value is a cell with snake format
+            const valueCell = beginCell()
+                .storeUint(SNAKE_PREFIX, 8)
+                .storeBuffer(Buffer.from(value))
+                .endCell();
+                
+            dict.set(keyHash, valueCell);
+        }
+    }
+
+    return beginCell()
+        .storeUint(ONCHAIN_CONTENT_PREFIX, 8)
+        .storeDict(dict)
+        .endCell();
+}
 
 export async function run(provider: NetworkProvider) {
     const admin = Address.parse("0QAmLCXR3ikA0ohMg6R82E2NHESHtXjA299_HqIe_Wqr1aXi");
     const recovery = admin; // Using same admin as recovery for now
 
-    // 1. Deploy Vault
-    // Content (TEP-64) with unique nonce for new addresses
-    const content = beginCell().storeUint(Math.floor(Math.random() * 1000000), 32).endCell(); 
+    // 1. Deploy Vault with nTON Metadata
+    console.log('Generating nTON Metadata...');
+    const content = buildTokenMetadata({
+        name: "Nova TON",
+        symbol: "nTON",
+        description: "Yield-bearing TON token by Nova Aggregator",
+        image: "https://nova-aggregator.com/logo.png", // Замените на реальную ссылку
+        decimals: "9"
+    });
     
     const vault = provider.open(await Vault.fromInit(admin, recovery, content));
 
@@ -27,20 +63,20 @@ export async function run(provider: NetworkProvider) {
 
     // 2. Deploy Strategy
     // Mainnet Protocol Addresses
-    const evaa_master = Address.parse("EQCD39VS5jcptHL8vMjEXrzGaRcCV4m6Ctj9b70m5A4-R-P3");
     const stonfi_router = Address.parse("EQB3n9NWuHqhRM9PaPISTPoo6Y6Br8_s7U_8Y5is6FscBR8");
     const stonfi_pton = Address.parse("EQCM3B12QK1e4yZSf8GtBRT0aLMNyEsBc_DhVfRRtOEffLez");
     const dedust_factory = Address.parse("EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67");
     const usdt_master = Address.parse("EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs");
+    const dedust_vault = Address.parse("EQD5_S8Oq_uO0X2T2yY2_G0Z_Z_Z_Z_Z_Z_Z_Z_Z_Z_Z_Z_Z"); // Placeholder
     
     const strategy = provider.open(await Strategy.fromInit(
         vault.address, 
         admin, 
-        evaa_master,
         stonfi_router,
         stonfi_pton,
         dedust_factory,
-        usdt_master
+        usdt_master,
+        dedust_vault
     ));
     
     console.log('Deploying Strategy...');
@@ -65,14 +101,15 @@ export async function run(provider: NetworkProvider) {
         {
             $$type: 'SetDexAddresses',
             dedust_factory: dedust_factory,
+            dedust_vault: dedust_vault,
             stonfi_router: stonfi_router,
             stonfi_pton: stonfi_pton,
             usdt_master: usdt_master
         }
     );
 
-    // 2.2 Set Strategy Mode (0 = EVAA Lending, 1 = STON.fi LP)
-    console.log('Setting Strategy Mode to EVAA Lending...');
+    // 2.2 Set Strategy Mode (0 = STON.fi LP, 1 = DeDust LP)
+    console.log('Setting Strategy Mode to STON.fi LP...');
     await strategy.send(
         provider.sender(),
         {
@@ -80,7 +117,7 @@ export async function run(provider: NetworkProvider) {
         },
         {
             $$type: 'SetStrategyMode',
-            mode: 0n // Start with lending
+            mode: 0n // Start with STON.fi LP
         }
     );
 
@@ -93,6 +130,7 @@ export async function run(provider: NetworkProvider) {
         },
         {
             $$type: 'AddStrategy',
+            is_nova: false,
             strategy: strategy.address,
             weight: 10000n // 100%
         }
