@@ -385,6 +385,14 @@ contract Strategy {
         }
     }
 
+    receive(msg: SetNovaToken) {
+        require(context().sender == self.admin_address, "Only admin");
+        // Strategy doesn't need to store nova_vault if it only uses DeDust for burn
+        // But for completeness, we can handle it if needed. 
+        // Currently, NOVA strategy just swaps TON to NOVA.
+        self.nova_wallet = msg.nova_master;
+    }
+
     receive(msg: SetStrategyMode) {
         require(context().sender == self.admin_address, "Only admin");
         self.strategy_mode = msg.mode;
